@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ollama Web App</title>
+    <link rel="icon" href="assets/ollama.png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#6366f1">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Ollama">
+    <link rel="stylesheet" href="css/styles.css">
+
+    <!-- Independent Libraries (CDN fallback, could be local) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+</head>
+
+<body>
+
+    <div id="app">
+        <!-- Overlay for Mobile Sidebar -->
+        <div id="overlay"></div>
+
+        <!-- Sidebar -->
+        <aside id="sidebar">
+            <div class="sidebar-header">
+                <h3>Chats</h3>
+                <button id="close-sidebar-btn" class="menu-btn" style="font-size: 1rem;">✕</button>
+            </div>
+
+            <button class="new-chat-btn" id="new-chat-btn">
+                <span>+</span> New Chat
+            </button>
+
+            <div class="chat-list" id="chat-list">
+                <!-- Chat items injected here -->
+            </div>
+
+            <div class="sidebar-footer">
+                <!-- Settings Button -->
+                <button id="settings-btn-sidebar" class="settings-btn-sidebar">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px"
+                        fill="currentColor">
+                        <path
+                            d="M480-120q-150 0-255-105T120-480q0-150 105-255t255-105q14 0 27.5 1t26.5 3q-41 29-65.5 75.5T444-660q0 90 63 153t153 63q55 0 101-24.5t75-65.5q2 13 3 26.5t1 27.5q0 150-105 255T480-120Zm0-80q88 0 158-48.5T740-375q-20 5-40 8t-40 3q-123 0-209.5-86.5T364-660q0-20 3-40t8-40q-78 32-126.5 102T200-480q0 116 82 198t198 82Zm-10-270Z" />
+                    </svg>
+                    Settings & Models
+                </button>
+
+                <div class="font-size-changer">
+                    <button class="font-btn" data-size="small" title="Small Font">A</button>
+                    <button class="font-btn active" data-size="medium" title="Medium Font">A</button>
+                    <button class="font-btn" data-size="large" title="Large Font">A</button>
+                </div>
+
+                <div
+                    style="margin-top: 10px; text-align: center; color: #39e21b; font-size: 0.65rem; opacity: 0.8; font-weight: 500; letter-spacing: 0.02em;">
+                    Created with 🧠, ☕ and 🤖<br>
+                    Krishna Kanth B (krishnakanthb13)
+                </div>
+            </div>
+
+            <div id="sidebar-resizer"></div>
+        </aside>
+
+        <!-- Main Content -->
+        <main id="main-content">
+            <header>
+                <!-- Left: Menu Button -->
+                <button class="menu-btn" id="menu-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px"
+                        fill="currentColor">
+                        <path d="M120-240v-80h720v80H120Zm0-200v-80h720v80H120Zm0-200v-80h720v80H120Z" />
+                    </svg>
+                </button>
+
+                <!-- Center: Model Selector & Controls -->
+                <div class="model-selector-container"
+                    style="display: flex; flex-direction: row; align-items: center; gap: 8px;">
+
+                    <!-- NEW Dropdown Wrapper for Model -->
+                    <div class="relative-container">
+                        <div class="model-selector" id="model-selector-btn">
+                            <span id="current-model-name"
+                                style="flex: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Select
+                                Model...</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px"
+                                fill="currentColor">
+                                <path d="M480-360 280-560h400L480-360Z" />
+                            </svg>
+                        </div>
+                        <!-- Dropdown Content -->
+                        <div id="model-dropdown" class="dropdown-menu">
+                            <div class="model-search-container"
+                                style="padding: 0.5rem; border-bottom: 1px solid var(--border);">
+                                <div style="position: relative; display: flex; align-items: center;">
+                                    <input type="text" id="model-search-input" placeholder="Search models..."
+                                        autocomplete="off"
+                                        style="width: 100%; padding: 6px 24px 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-primary); font-size: 0.9rem;">
+                                    <button id="model-search-clear"
+                                        style="position: absolute; right: 4px; background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 2px; display: none;">
+                                        <svg xmlns="http://www.w3.org/2000/svg" height="16px" viewBox="0 -960 960 960"
+                                            width="16px" fill="currentColor">
+                                            <path
+                                                d="M256-200l-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div
+                                style="padding: 0.5rem; border-bottom: 1px solid var(--border); display: flex; gap: 4px;">
+                                <button class="sort-btn active" id="sort-default"
+                                    style="flex:1; background: var(--accent); color: white; border:none; border-radius:4px; padding:4px; font-size: 0.8rem; cursor: pointer;">Default</button>
+                                <button class="sort-btn" id="sort-az"
+                                    style="flex:1; background: var(--bg-tertiary); color: var(--text-secondary); border:none; border-radius:4px; padding:4px; font-size: 0.8rem; cursor: pointer;">A-Z</button>
+                            </div>
+                            <div class="model-list-container" id="model-list"
+                                style="max-height: 300px; overflow-y: auto;">
+                                <!-- Models injected here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Interactive Controls -->
+                    <div id="header-controls" style="display: flex; align-items: center; gap: 6px;">
+                        <button id="search-btn" class="icon-btn" title="Toggle Web Search">🌐</button>
+                        <button id="thinking-btn" class="icon-btn" title="Toggle Thinking">🧠</button>
+
+                        <!-- NEW Dropdown Wrapper for Quality -->
+                        <div class="relative-container">
+                            <div class="quality-selector" id="quality-selector-btn">
+                                <span id="current-quality-name">Std</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" height="16px" viewBox="0 -960 960 960"
+                                    width="16px" fill="currentColor">
+                                    <path d="M480-360 280-560h400L480-360Z" />
+                                </svg>
+                            </div>
+                            <!-- Dropdown Content -->
+                            <div id="quality-dropdown" class="dropdown-menu right">
+                                <div class="model-list-container">
+                                    <div class="model-option" onclick="setQualityPreset('none')"><span
+                                            class="model-name">≡ Standard</span></div>
+                                    <div class="model-option" onclick="setQualityPreset('low')"><span
+                                            class="model-name">≡ Low Reasoning</span></div>
+                                    <div class="model-option" onclick="setQualityPreset('medium')"><span
+                                            class="model-name">≡ Med Reasoning</span></div>
+                                    <div class="model-option" onclick="setQualityPreset('high')"><span
+                                            class="model-name">≡ High Reasoning</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <input type="checkbox" id="thinking-toggle" style="display: none;">
+                    </div>
+                </div>
+
+                <!-- Right: New Chat -->
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button class="icon-btn" id="header-new-chat-btn" title="New Chat">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px"
+                            fill="currentColor">
+                            <path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z" />
+                        </svg>
+                    </button>
+                </div>
+            </header>
+
+            <div id="chat-container">
+                <div id="messages-area">
+                    <!-- Messages injected here -->
+                </div>
+            </div>
+
+            <footer>
+                <div class="input-wrapper">
+                    <textarea id="user-input" rows="1" placeholder="Message..."></textarea>
+                    <button id="send-btn" disabled>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="currentColor" />
+                        </svg>
+                    </button>
+                </div>
+            </footer>
+
+            <!-- Settings Right Sidebar -->
+            <div id="settings-panel" class="settings-panel">
+                <div class="settings-header">
+                    <h3>Settings</h3>
+                    <button class="close-panel-btn" id="close-settings-modal">✕</button>
+                </div>
+                <div class="settings-scroll-area">
+                    <div class="settings-group">
+                        <label>Local Ollama URL</label>
+                        <input type="text" id="setting-local-url" class="settings-input"
+                            placeholder="http://localhost:11434">
+                        <small style="color: var(--text-secondary); font-size: 0.75rem;">Ensure
+                            <code>OLLAMA_ORIGINS="*"</code> is set if needed.</small>
+                    </div>
+
+                    <div class="settings-group">
+                        <label>Cloud / Remote API URL</label>
+                        <input type="text" id="setting-cloud-url" class="settings-input"
+                            placeholder="https://ollama.com/api">
+                    </div>
+
+                    <div class="settings-group">
+                        <label>Cloud API Key (Optional)</label>
+                        <div class="password-wrapper">
+                            <input type="password" id="setting-cloud-key" class="settings-input" placeholder="sk-...">
+                            <button id="toggle-password-btn" class="password-toggle" type="button">
+                                <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960"
+                                    width="18px" fill="currentColor">
+                                    <path
+                                        d="M480-320q75 0 127.5-52.5T660-500q0-75-52.5-127.5T480-680q-75 0-127.5 52.5T300-500q0 75 52.5 127.5T480-320Zm0-80q-42 0-71-29t-29-71q0-42 29-71t71-29q42 0 71 29t29 71q0 42-29 71t-71 29Zm0 160q-154 0-278-88T22-500q62-132 186-220t272-88q148 0 272 88t186 220q-62 132-186 220t-272 88Zm0-80q113 0 207.5-59.5T832-500q-50-101-144.5-160.5T480-720q-113 0-207.5 59.5T128-500q50 101 144.5 160.5T480-400Z" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <div
+                            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+                            <label style="margin: 0;">Manage Local Models</label>
+                            <button id="toggle-local-list-btn" class="text-link-btn"
+                                style="font-size: 0.8rem; color: var(--accent);">Show</button>
+                        </div>
+                        <div id="local-model-list-container" class="collapsible-content">
+                            <div id="local-model-list" class="model-list-editor">
+                                <!-- List items -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <div
+                            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+                            <label style="margin: 0;">Manage Cloud Models</label>
+                            <button id="toggle-cloud-list-btn" class="text-link-btn"
+                                style="font-size: 0.8rem; color: var(--accent);">Show All</button>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" id="setting-new-model" class="settings-input"
+                                placeholder="Add model name" style="margin-bottom:0;">
+                            <button id="add-model-btn" class="settings-btn secondary"
+                                style="padding: 0 16px;">+</button>
+                        </div>
+                        <div id="cloud-model-list-container" class="collapsible-content">
+                            <div id="cloud-model-list" class="model-list-editor">
+                                <!-- List items -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <label>Data Management</label>
+                        <button id="export-db-btn" class="settings-btn secondary" style="width:100%;">
+                            Download Chat History (JSON)
+                        </button>
+                    </div>
+
+                    <button id="save-settings-btn" class="settings-btn" style="width: 100%; margin-top: 1rem;">
+                        Save & Close
+                    </button>
+                </div>
+            </div>
+
+            <script src="js/app.js"></script>
+            <script>
+                if ('serviceWorker' in navigator) {
+                    window.addEventListener('load', () => {
+                        navigator.serviceWorker.register('./sw.js')
+                            .then(reg => console.log('Service Worker registered', reg))
+                            .catch(err => console.error('Service Worker registration failed', err));
+                    });
+                }
+            </script>
+</body>
+
+</html>

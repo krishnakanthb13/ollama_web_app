@@ -1,0 +1,17 @@
+{
+    "name": "Ollama Web App",
+    "short_name": "Ollama",
+    "description": "A powerful web interface for interacting with Ollama models.",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#0a0a0b",
+    "theme_color": "#6366f1",
+    "icons": [
+        {
+            "src": "assets/ollama.png",
+            "sizes": "192x192 512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}
