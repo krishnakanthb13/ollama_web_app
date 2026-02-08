@@ -1,0 +1,118 @@
+
+1. create a web application - functional in desktop, tab and on phone (all different resolutions) - fits correctly.
+2. Reference - folder - ollama_phone_chat
+3. Make the app independent, that it handles (has individual options for all the below mentioned features - UI)
+	- API key
+	- Addition and Removal of Cloud Models
+	- download chat history as a db file
+	- stores everything securly in the web browser
+	- and all the UI elements and features from ollama_phone_chat
+4. The app should be light weight and secure and fast.
+5. Do not complicate anything just the core functionality build.
+
+---
+
+**OPTIMIZED EXECUTION PROMPT**
+
+---
+
+**Role & Expertise**
+You are a senior full-stack web engineer and security-focused product architect experienced in lightweight, privacy-first web applications, responsive UI systems, and local-first data storage.
+
+---
+
+**Objective**
+Design and implement a **lightweight, fast, and secure web application** named **`ollama_web_app`** that works seamlessly on **desktop, tablet, and mobile** (all screen resolutions), focusing strictly on **core functionality** without unnecessary complexity.
+
+---
+
+**Core Requirements**
+
+### 1. Platform & Responsiveness
+
+* Single web application usable on:
+  * Desktop
+  * Tablet
+  * Mobile phones
+* Fully responsive layout (no broken UI, no overflow, no scaling issues).
+* Mobile-first but desktop-capable.
+* Touch-friendly interactions on phones and tablets.
+
+---
+
+### 2. Application Scope
+
+* Project reference / folder name: **`ollama_phone_chat`** (Use only the API version of the Application)
+* Independent, self-contained web app (no hard dependency on external desktop apps).
+* Must run purely in the browser.
+
+---
+
+### 3. Functional Features (UI + Logic)
+
+The app must expose **individual UI options** for each of the following:
+
+* **API Key Management**
+  * Secure input, edit, and delete.
+  * Never hard-coded.
+  * Stored only in browser storage.
+
+* **Cloud Model Management**
+  * Add cloud models manually. (Use the already existing list as a based from ollama_phone_chat)
+  * Remove existing models.
+  * Simple list view with minimal controls.
+
+* **Chat Interface**
+  * All UI elements and features already present in `ollama_phone_chat`.
+  * Clean, minimal chat layout.
+  * Fast message rendering.
+
+* **Chat History**
+  * Persist chats locally in the browser.
+  * Ability to **download full chat history as a single database file** (e.g., SQLite or IndexedDB export).
+
+* **Local Storage & Security**
+  * Everything stored **securely in the browser**.
+  * No server-side persistence.
+  * No tracking, no analytics, no telemetry.
+
+---
+
+### 4. Performance & Design Constraints
+
+* Lightweight bundle size.
+* Minimal dependencies.
+* Fast startup time.
+* No over-engineering.
+* No unnecessary abstractions.
+* Focus only on **core functionality**.
+
+---
+
+### 5. Non-Goals (Explicitly Avoid)
+
+* No user accounts or authentication systems.
+* No cloud backend.
+* No advanced theming systems.
+* No feature creep.
+* No enterprise-level architecture.
+
+---
+
+**Expected Output**
+
+* Clear project structure.
+* Recommended tech stack (kept minimal).
+* High-level architecture.
+* Key UI components.
+* Storage strategy.
+* Security considerations.
+* Enough implementation detail that a developer can start building immediately.
+
+---
+
+**Execution Principle**
+
+> Keep it simple.
+> Build only what is required.
+> Optimize for speed, clarity, and reliability.

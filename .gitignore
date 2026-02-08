@@ -29,8 +29,3 @@ Desktop.ini
 # Build output (if any in future)
 dist/
 build/
-
-# Notes
-RELEASE_NOTES.md
-SOCIAL_MEDIA_KIT.md
-seed_prompt.txt
