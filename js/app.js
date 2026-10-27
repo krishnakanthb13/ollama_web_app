@@ -10,6 +10,7 @@ const {
     normalizeChoice,
     normalizeSidebarWidth,
     uniqueStrings,
+    isFreeCloudModel,
     splitCloudModelsByPlan,
     normalizeEndpointUrl,
     canSendApiKey,
@@ -253,6 +254,7 @@ async function init() {
         await loadModels();
         setSortOrder(state.sortOrder);
         await loadChatList();
+        renderMessages();
 
         // Restore UI state
         applyFontSize(state.fontSize);
@@ -617,7 +619,21 @@ function renderModelList() {
         header.style.fontWeight = 'bold';
         header.style.fontSize = '0.8rem';
         header.style.color = 'var(--text-secondary)';
-        header.textContent = title;
+        header.style.display = 'flex';
+        header.style.alignItems = 'center';
+        header.style.justifyContent = 'space-between';
+        header.style.gap = '8px';
+
+        const label = document.createElement('span');
+        label.className = 'model-group-title';
+        label.textContent = title;
+        header.appendChild(label);
+
+        const count = document.createElement('span');
+        count.className = 'model-group-count';
+        count.textContent = String(models.length);
+        header.appendChild(count);
+
         container.appendChild(header);
 
         models.forEach(m => container.appendChild(createItem(m.name, m.type)));
@@ -656,6 +672,8 @@ function setModel(name) {
 
     // Re-render list to show selection
     renderModelList();
+    // Keep the empty-state plan note in sync when no conversation is open.
+    if (state.messages.length === 0) renderMessages();
 }
 
 async function loadChatList() {
@@ -768,9 +786,16 @@ function renderMessages() {
     dom.messagesArea.innerHTML = '';
 
     if (state.messages.length === 0) {
+        const isCloud = Boolean(state.currentModel)
+            && state.cloudModels.includes(state.currentModel)
+            && !state.localModels.includes(state.currentModel);
+        const planNote = !isCloud ? '' : (isFreeCloudModel(state.currentModel, FREE_CLOUD_MODELS)
+            ? '<div class="model-plan-note free">☁️ Free cloud model · uses free usage credits</div>'
+            : '<div class="model-plan-note paid">☁️ Paid cloud model · requires a paid plan or usage credits · <a href="https://ollama.com/settings" target="_blank" rel="noopener noreferrer">Manage</a></div>');
+
         dom.messagesArea.innerHTML = `
             <div class="message assistant-msg" style="opacity: 0.5; text-align: center; margin-top: 2rem;">
-                 <div class="message-content">Start a conversation using ${escapeHtml(state.currentModel || 'Ollama')}</div>
+                 <div class="message-content">Start a conversation using ${escapeHtml(state.currentModel || 'Ollama')}${planNote}</div>
             </div>`;
         return;
     }

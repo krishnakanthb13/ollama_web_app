@@ -414,7 +414,7 @@ test('local models are listed without suffix filtering and duplicates are remove
 });
 
 test('cloud models are split into free and paid sections', async () => {
-    server.state.models = ['llama3.1:8b'];
+    server.state.models = ['llama3.1:8b', 'gemma4:31b'];
 
     const { context, page } = await openApp(browser, port, {
         cloudModels: JSON.stringify([
@@ -431,7 +431,7 @@ test('cloud models are split into free and paid sections', async () => {
         let current = null;
         for (const child of Array.from(list.children)) {
             if (child.classList.contains('model-group-header')) {
-                current = child.textContent;
+                current = child.querySelector('.model-group-title').textContent;
                 sections[current] = [];
             } else if (current && child.classList.contains('model-option')) {
                 sections[current].push(child.querySelector('.model-name').textContent);
@@ -446,15 +446,21 @@ test('cloud models are split into free and paid sections', async () => {
             Object.keys(sections),
             ['LOCAL MODELS', 'FREE CLOUD MODELS', 'PAID CLOUD MODELS']
         );
-        assert.deepEqual(sections['LOCAL MODELS'], ['llama3.1:8b']);
+        assert.deepEqual(sections['LOCAL MODELS'], ['llama3.1:8b', 'gemma4:31b']);
         assert.deepEqual(
             sections['FREE CLOUD MODELS'],
-            ['gpt-oss:20b-cloud', 'gemma4:31b', 'nemotron-3-super']
+            ['gpt-oss:20b-cloud', 'nemotron-3-super'],
+            'a local model that shares a free cloud name must stay local'
         );
         assert.deepEqual(
             sections['PAID CLOUD MODELS'],
             ['glm-4.7:cloud', 'minimax-m2.1:cloud']
         );
+
+        const counts = await page.$$eval('#model-list .model-group-count', (elements) =>
+            elements.map((element) => element.textContent)
+        );
+        assert.deepEqual(counts, ['2', '2', '2']);
 
         await page.click('#model-selector-btn');
         await page.click('#sort-az');
@@ -467,11 +473,43 @@ test('cloud models are split into free and paid sections', async () => {
         );
         assert.deepEqual(
             sorted['FREE CLOUD MODELS'],
-            ['gemma4:31b', 'gpt-oss:20b-cloud', 'nemotron-3-super']
+            ['gpt-oss:20b-cloud', 'nemotron-3-super']
         );
         assert.deepEqual(
             sorted['PAID CLOUD MODELS'],
             ['glm-4.7:cloud', 'minimax-m2.1:cloud']
+        );
+    } finally {
+        await context.close();
+    }
+});
+
+test('the empty state explains the selected cloud model plan', async () => {
+    server.state.models = [];
+
+    const { context, page } = await openApp(browser, port, {
+        cloudModels: JSON.stringify(['gemma4:31b', 'glm-4.7:cloud']),
+        lastModel: 'gemma4:31b'
+    });
+
+    try {
+        await page.waitForSelector('.model-plan-note.free');
+        assert.match(
+            (await page.textContent('.model-plan-note')).trim(),
+            /Free cloud model/
+        );
+
+        await page.click('#model-selector-btn');
+        await page.click('#model-list .model-option:has-text("glm-4.7:cloud")');
+        await page.waitForFunction(() => state.currentModel === 'glm-4.7:cloud');
+
+        await page.waitForSelector('.model-plan-note.paid');
+        const paidNote = (await page.textContent('.model-plan-note')).trim();
+        assert.match(paidNote, /Paid cloud model/);
+        assert.match(paidNote, /paid plan or usage credits/);
+        assert.equal(
+            await page.getAttribute('.model-plan-note a', 'href'),
+            'https://ollama.com/settings'
         );
     } finally {
         await context.close();

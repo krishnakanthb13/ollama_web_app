@@ -258,6 +258,12 @@ aside {
   flex: 1;
 }
 
+.model-group-count {
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Small screens adjustments */
 @media (max-width: 600px) {
   .dropdown-menu {
@@ -679,6 +685,26 @@ header {
   /* Align left */
   padding-top: 0;
   max-width: 100%;
+}
+
+.model-plan-note {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.model-plan-note.free {
+  color: var(--success);
+}
+
+.model-plan-note.paid {
+  color: var(--warning);
+}
+
+.model-plan-note a {
+  color: inherit;
+  text-decoration: underline;
 }
 
 /* Meta & Actions */

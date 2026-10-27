@@ -15,6 +15,7 @@ const {
     normalizeSidebarWidth,
     uniqueStrings,
     normalizeCloudModelName,
+    isFreeCloudModel,
     splitCloudModelsByPlan,
     normalizeEndpointUrl,
     isLoopbackEndpoint,
@@ -208,6 +209,17 @@ test('normalizeCloudModelName folds API names and cloud aliases', () => {
     assert.equal(normalizeCloudModelName('GPT-OSS:20B-CLOUD'), 'gpt-oss:20b');
     assert.equal(normalizeCloudModelName(null), '');
     assert.equal(normalizeCloudModelName(42), '');
+});
+
+test('isFreeCloudModel matches API names and cloud aliases', () => {
+    const freeModels = ['gemma4:31b', 'gpt-oss:20b', 'nemotron-3-super'];
+
+    assert.equal(isFreeCloudModel('gemma4:31b', freeModels), true);
+    assert.equal(isFreeCloudModel('gemma4:31b-cloud', freeModels), true);
+    assert.equal(isFreeCloudModel('GPT-OSS:20B:cloud', freeModels), true);
+    assert.equal(isFreeCloudModel('glm-4.7:cloud', freeModels), false);
+    assert.equal(isFreeCloudModel('', freeModels), false);
+    assert.equal(isFreeCloudModel(null, freeModels), false);
 });
 
 test('splitCloudModelsByPlan separates free models and accepts alias suffixes', () => {

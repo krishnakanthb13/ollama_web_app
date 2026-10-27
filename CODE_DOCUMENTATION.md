@@ -39,10 +39,17 @@ address. Insecure remote endpoints are refused rather than leaking the key.
 The model selector keeps local models separate from cloud models. Cloud models
 are further split into `FREE CLOUD MODELS` and `PAID CLOUD MODELS` using the
 `FREE_CLOUD_MODELS` list, which mirrors the seven free-tier models shown under
-usage settings on [ollama.com/settings](https://ollama.com/settings). Plan
-matching accepts both API names (`gemma4:31b`) and CLI aliases
-(`gemma4:31b-cloud`). Sorting (Default or A-Z) applies inside each section so
-the local/free/paid boundary stays visible.
+usage settings on [ollama.com/settings](https://ollama.com/settings). Each
+section shows how many models it contains. Plan matching accepts both API names
+(`gemma4:31b`) and CLI aliases (`gemma4:31b-cloud`). Sorting (Default or A-Z)
+applies inside each section so the local/free/paid boundary stays visible.
+
+Grouping is based on the source lists (`localModels` vs `cloudModels`), never on
+the name suffix alone, so a locally pulled model that happens to share a free
+cloud name stays in the local section. When an empty chat is open, the
+placeholder repeats the selected cloud model's plan: free-tier models are marked
+as using free usage credits, while all other cloud models point to the paid plan
+or usage credits and link to the usage settings.
 
 The grouping is presentation-only: it does not change which endpoint or model
 name is sent in a request. Free-tier usage still draws from the account's free
@@ -63,13 +70,14 @@ credits, and any other cloud model requires credits or a paid plan.
 | **Chat Logic** | `sendMessage()` | Handles user input, updates UI, calls Ollama API, streams the response, and persists a partial answer when a request is stopped or interrupted. |
 | | `stopGeneration()` | Cancels the active request; the partial answer is saved with an `interrupted` status. |
 | **Rendering** | `renderChatList()` | Renders the sidebar list of conversation history. |
-| | `renderModelList()` | Renders local, free cloud and paid cloud model sections, applying the search filter and sort order within each section. |
+| | `renderMessages()` | Renders the transcript, including the empty-state hint and the selected cloud model's plan note. |
+| | `renderModelList()` | Renders local, free cloud and paid cloud model sections with counts, applying the search filter and sort order within each section. |
 | | `appendMessageToUI()` | Adds a new message bubble to the chat window (supports Markdown). |
 | **Utilities** | `escapeHtml()` | Escapes all untrusted values before HTML interpolation. |
 | | `createNdjsonParser()` | Buffers split stream lines, flushes the final line, and reports `done`/`error` payloads. |
 | | `parseStoredArray()` / `normalizeChoice()` | Validate persisted arrays and enum-like settings before they reach app state. |
 | | `safeStorageGet()` | Reads localStorage without throwing when storage is blocked. |
-| | `splitCloudModelsByPlan()` / `normalizeCloudModelName()` | Splits cloud models into free and paid lists, matching API names and `-cloud`/`:cloud` aliases. |
+| | `splitCloudModelsByPlan()` / `normalizeCloudModelName()` / `isFreeCloudModel()` | Split cloud models into free and paid lists, matching API names and `-cloud`/`:cloud` aliases. |
 | | `normalizeEndpointUrl()` / `canSendApiKey()` | Validates endpoint URLs and blocks API keys on insecure remote connections. |
 | | `describeFetchFailure()` | Adds local Ollama or cloud CORS guidance to network failures. |
 | **Settings** | `openSettings()` | Toggles the settings panel. |

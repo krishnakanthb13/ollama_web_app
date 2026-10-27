@@ -290,6 +290,22 @@
     }
 
     /**
+     * Whether a model name is in the free cloud tier. Matching ignores a
+     * trailing `-cloud`/`:cloud` alias and is case-insensitive.
+     *
+     * @param {unknown} name
+     * @param {unknown} freeModels
+     * @returns {boolean}
+     */
+    function isFreeCloudModel(name, freeModels) {
+        const normalized = normalizeCloudModelName(name);
+        if (!normalized) return false;
+
+        return uniqueStrings(freeModels)
+            .some((entry) => normalizeCloudModelName(entry) === normalized);
+    }
+
+    /**
      * Split cloud models into free-tier and paid lists. The relative order of
      * each list follows the input so callers can decide how to sort.
      *
@@ -416,6 +432,7 @@
         normalizeSidebarWidth,
         uniqueStrings,
         normalizeCloudModelName,
+        isFreeCloudModel,
         splitCloudModelsByPlan,
         normalizeEndpointUrl,
         isLoopbackEndpoint,
