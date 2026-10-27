@@ -55,8 +55,12 @@ cloud).
 The app runs entirely in the browser, so every API call is subject to CORS.
 Ollama's public endpoint (`https://ollama.com/api`) does not return
 `Access-Control-Allow-Origin`, which means direct browser requests are blocked.
-Use a same-origin proxy or a local Ollama daemon with cloud models enabled; the
-UI reports this explicitly when a remote request fails.
+Before falling back to that endpoint, `resolveLocalModelName()` maps the
+selected model to the local daemon's relay when it has one (`beam` ->
+`beam:cloud`), so cloud and free-tier chats route through the daemon — the same
+path the Ollama app itself uses. Only models the daemon cannot serve go to the
+configured cloud URL, where a same-origin proxy is needed; the UI reports this
+explicitly when a remote request fails.
 
 Endpoint URLs are validated as `http(s)` and trailing slashes are removed. API
 keys are attached only to cloud requests, and only over HTTPS or a loopback
@@ -76,9 +80,19 @@ the free/local/paid boundary stays visible. Opening the dropdown always resets
 its scroll position to the top, so the free section is shown even if the last
 visit ended on the paid section.
 
-Grouping is based on the source lists (`localModels` vs `cloudModels`), never on
-the name suffix alone, so a locally pulled model that happens to share a free
-cloud name stays in the local section. When an empty chat is open, the
+Grouping is based on the source lists, never on the name suffix alone, so a
+locally pulled model that happens to share a free cloud name stays in the local
+section. The exception is the local daemon's cloud relays: `/api/tags` entries
+carrying `remote_model` (or a `-cloud`/`:cloud` name) are cloud models surfaced
+by the Ollama app, so they are grouped under free/paid cloud — classified by the
+model they point at — instead of the local section. Relays stay in
+`state.localModels` and keep their daemon name, so request routing is unchanged:
+selecting one still goes through the local daemon. A relay is also suppressed
+when the stored cloud list already carries its model (`gemma4:cloud` next to
+`gemma4:31b`), so nothing appears twice. Grouping never changes where a request
+goes: `resolveLocalModelName()` prefers the local daemon (including its relays)
+and only uses the cloud endpoint for models the daemon does not serve. When an
+empty chat is open, the
 placeholder repeats the selected cloud model's plan: free-tier models are marked
 as using free usage credits and link to the usage settings, while all other
 cloud models point to the paid plan or usage credits and link to both the
@@ -148,7 +162,7 @@ so private browsing or a full quota cannot break chat.
 | | `createNdjsonParser()` | Buffers split stream lines, flushes the final line, and reports `done`/`error` payloads. |
 | | `parseStoredArray()` / `normalizeChoice()` | Validate persisted arrays and enum-like settings before they reach app state. |
 | | `safeStorageGet()` / `parseStoredObject()` | Read localStorage without throwing and validate persisted JSON objects. |
-| | `splitCloudModelsByPlan()` / `normalizeCloudModelName()` / `isFreeCloudModel()` | Split cloud models into free and paid lists, matching API names and `-cloud`/`:cloud` aliases. |
+| | `splitCloudModelsByPlan()` / `normalizeCloudModelName()` / `isFreeCloudModel()` | Split cloud models into free and paid lists, matching API names and `-cloud`/`:cloud` aliases, and classifying daemon relays by their target model. |
 | | `canonicalizeFreeCloudModels()` | Rewrites stored free-tier aliases to their canonical API name so they are not hidden by the local daemon's cloud mirrors. |
 | | `mergeCloudModels()` | Merges catalogue additions without duplicating the same model under an API name and CLI alias. |
 | | `normalizeEndpointUrl()` / `canSendApiKey()` | Validates endpoint URLs and blocks API keys on insecure remote connections. |

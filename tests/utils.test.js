@@ -288,6 +288,22 @@ test('splitCloudModelsByPlan treats everything as paid without a free list', () 
     assert.deepEqual(paid, ['gemma4:31b', 'glm-4.7:cloud']);
 });
 
+test('splitCloudModelsByPlan classifies relays by their target model', () => {
+    const targets = new Map([
+        ['gemma4:cloud', 'gemma4:31b'],
+        ['muse-spark-open:cloud', 'muse-spark-open']
+    ]);
+
+    const { free, paid } = splitCloudModelsByPlan(
+        ['gemma4:cloud', 'muse-spark-open:cloud', 'glm-4.7:cloud'],
+        ['gemma4:31b', 'beam'],
+        targets
+    );
+
+    assert.deepEqual(free, ['gemma4:cloud'], 'a relay groups with the free model it points at');
+    assert.deepEqual(paid, ['muse-spark-open:cloud', 'glm-4.7:cloud']);
+});
+
 test('parseStoredObject accepts objects and rejects malformed or array values', () => {
     assert.deepEqual(parseStoredObject('{"new":"hello","chat:1":"draft"}'), {
         new: 'hello',

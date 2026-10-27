@@ -81,7 +81,7 @@ function startNdjson(res, model) {
 
 function createMockServer() {
     const state = {
-        /** @type {string[]} */
+        /** @type {Array<string | Record<string, unknown>>} model names or full /api/tags entries */
         models: ['good-model:latest-cloud'],
         /** @type {Array<Record<string, unknown>>} */
         requests: [],
@@ -95,7 +95,9 @@ function createMockServer() {
         try {
             if (url.pathname === '/api/tags' && req.method === 'GET') {
                 return sendJson(res, 200, {
-                    models: state.models.map((name) => ({ name, modified_at: '2026-01-01T00:00:00Z' }))
+                    models: state.models.map((entry) => typeof entry === 'string'
+                        ? { name: entry, modified_at: '2026-01-01T00:00:00Z' }
+                        : { modified_at: '2026-01-01T00:00:00Z', ...entry })
                 });
             }
 

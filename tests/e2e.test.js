@@ -652,6 +652,118 @@ test('legacy free aliases shadowed by local cloud mirrors still list all seven f
     }
 });
 
+test('local daemon cloud relays are grouped under the cloud sections', async () => {
+    server.state.models = [
+        { name: 'llama3.1:8b' },
+        { name: 'gemma4:cloud', remote_model: 'gemma4:31b', remote_host: 'https://ollama.com' },
+        { name: 'muse-spark-open:cloud', remote_model: 'muse-spark-open', remote_host: 'https://ollama.com' }
+    ];
+
+    const { context, page } = await openApp(browser, port, {
+        cloudModels: JSON.stringify(['gemma4:31b', 'glm-4.7:cloud']),
+        cloudCatalogVersion: '1'
+    });
+
+    try {
+        const sections = await page.$eval('#model-list', (list) => {
+            const result = {};
+            let current = null;
+            for (const child of Array.from(list.children)) {
+                if (child.classList.contains('model-group-header')) {
+                    current = child.querySelector('.model-group-title').textContent;
+                    result[current] = [];
+                } else if (current && child.classList.contains('model-option')) {
+                    result[current].push(child.querySelector('.model-name').textContent);
+                }
+            }
+            return result;
+        });
+
+        assert.deepEqual(
+            sections['LOCAL MODELS'],
+            ['llama3.1:8b'],
+            'cloud relays must not be listed as local models'
+        );
+        assert.deepEqual(
+            sections['FREE CLOUD MODELS'],
+            ['gemma4:31b'],
+            'a relay whose model is already listed must not duplicate it'
+        );
+        assert.deepEqual(
+            sections['PAID CLOUD MODELS'],
+            ['glm-4.7:cloud', 'muse-spark-open:cloud'],
+            'unlisted relays join the paid section'
+        );
+
+        // Grouping is presentation-only: relays keep their daemon name, stay in
+        // localModels for availability and are still sent through the daemon.
+        assert.deepEqual(
+            await page.evaluate(() => [...state.cloudMirrors.keys()].sort()),
+            ['gemma4:cloud', 'muse-spark-open:cloud']
+        );
+        assert.ok(
+            await page.evaluate(() => state.localModels.includes('muse-spark-open:cloud'))
+        );
+
+        await page.click('#model-selector-btn');
+        await page.click('#model-list .model-option:has-text("muse-spark-open:cloud")');
+        await page.waitForFunction(() => state.currentModel === 'muse-spark-open:cloud');
+        await sendMessage(page, 'relay model');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('from the mock.'),
+            null,
+            { timeout: 10000 }
+        );
+
+        const relayed = server.state.requests.at(-1);
+        assert.equal(relayed.model, 'muse-spark-open:cloud');
+    } finally {
+        await context.close();
+    }
+});
+
+test('canonical cloud names are sent through the local daemon relay', async () => {
+    server.state.models = [
+        { name: 'llama3.1:8b' },
+        { name: 'beam:cloud', remote_model: 'beam', remote_host: 'https://ollama.com' }
+    ];
+
+    const { context, page } = await openApp(browser, port, {
+        cloudModels: JSON.stringify(['beam']),
+        cloudCatalogVersion: '1',
+        lastModel: 'beam'
+    });
+
+    try {
+        assert.equal(await page.evaluate(() => state.currentModel), 'beam');
+        assert.equal(
+            await page.getAttribute('#model-selector-btn', 'data-source'),
+            'free',
+            'free models present as cloud even when routed through the daemon'
+        );
+
+        await sendMessage(page, 'via the relay');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('from the mock.'),
+            null,
+            { timeout: 10000 }
+        );
+
+        assert.equal(
+            server.state.requests.at(-1).model,
+            'beam:cloud',
+            'the request must use the name the daemon serves'
+        );
+        assert.equal(
+            await page.evaluate(() => state.currentModel),
+            'beam',
+            'the selected name stays the canonical API name'
+        );
+    } finally {
+        await context.close();
+    }
+});
+
 test('a reachable cloud catalogue refreshes the cached model list', async () => {
     server.state.models = [];
 

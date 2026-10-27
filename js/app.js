@@ -12,6 +12,7 @@ const {
     uniqueStrings,
     parseStoredObject,
     buildConversationContext,
+    normalizeCloudModelName,
     isFreeCloudModel,
     mergeCloudModels,
     canonicalizeFreeCloudModels,
@@ -272,6 +273,10 @@ const state = {
 
     // Models
     localModels: [],
+    // Cloud relays surfaced by the local daemon (`remote_model` entries and
+    // `-cloud`/`:cloud` names): display name -> real model name. They stay in
+    // `localModels` for routing but are grouped under the cloud sections.
+    cloudMirrors: new Map(),
     hiddenModels: uniqueStrings(parseStoredArray(safeStorageGet('hiddenModels'), [])),
     cloudModels: loadStoredCloudModels(),
     modelSearchQuery: '',
@@ -653,7 +658,25 @@ async function loadModels() {
         if (res.ok) {
             const data = await res.json();
             // `/api/tags` lists locally reachable models; keep every valid name.
-            state.localModels = uniqueStrings((data.models || []).map((model) => model?.name));
+            const models = (data.models || []).filter((model) => model?.name);
+            state.localModels = uniqueStrings(models.map((model) => model.name));
+
+            // Entries carrying `remote_model` (or a cloud suffix) are cloud
+            // relays of the Ollama app, not downloads; remember their target so
+            // the selector groups them under free/paid cloud instead of local.
+            state.cloudMirrors = new Map();
+            for (const model of models) {
+                const name = String(model.name);
+                const remote = typeof model.remote_model === 'string'
+                    ? model.remote_model.trim()
+                    : '';
+                const suffixed = /[-:]cloud$/i.test(name);
+                if (remote) {
+                    state.cloudMirrors.set(name, remote);
+                } else if (suffixed) {
+                    state.cloudMirrors.set(name, name.replace(/[-:]cloud$/i, ''));
+                }
+            }
         }
     } catch (e) { /* ignore */ }
 
@@ -759,11 +782,31 @@ function renderModelList() {
         return div;
     };
 
-    let allLocal = uniqueStrings(state.localModels).map(m => ({ name: m, type: 'Local' }));
+    // Genuine downloads only. The local daemon also mirrors cloud models
+    // (`remote_model` entries / `-cloud` names); those group with cloud below.
+    let allLocal = uniqueStrings(state.localModels)
+        .filter((name) => !state.cloudMirrors.has(name))
+        .map(m => ({ name: m, type: 'Local' }));
     const localNames = new Set(allLocal.map((model) => model.name));
-    let allCloud = uniqueStrings(state.cloudModels)
+
+    // A locally pulled model keeps priority over the same cloud entry, and a
+    // relay is skipped when the stored cloud list already carries its model
+    // (e.g. `gemma4:cloud` next to `gemma4:31b`), so nothing is listed twice.
+    const cloudBase = uniqueStrings(state.cloudModels)
+        .filter((name) => !localNames.has(name));
+    const coveredMirror = (name) => {
+        const target = state.cloudMirrors.get(name) || '';
+        return Boolean(target) && cloudBase.some(
+            (entry) => normalizeCloudModelName(entry) === normalizeCloudModelName(target)
+        );
+    };
+    const mirrorNames = [...state.cloudMirrors.keys()]
+        .filter((name) => !state.hiddenModels.includes(name))
         .filter((name) => !localNames.has(name))
-        .map(m => ({ name: m, type: 'Cloud' }));
+        .filter((name) => !coveredMirror(name));
+
+    let allCloud = mergeCloudModels(cloudBase, mirrorNames)
+        .map((name) => ({ name, type: 'Cloud' }));
 
     // FILTERING logic
     if (state.modelSearchQuery) {
@@ -775,8 +818,13 @@ function renderModelList() {
     allLocal = allLocal.filter(m => !state.hiddenModels.includes(m.name));
 
     // Paid and free cloud models are shown in separate sections so the plan
-    // boundary is visible. Matching accepts API names and `-cloud` aliases.
-    const cloudPlans = splitCloudModelsByPlan(allCloud.map(m => m.name), FREE_CLOUD_MODELS);
+    // boundary is visible. Matching accepts API names and `-cloud` aliases, and
+    // relays classify with the model they point at.
+    const cloudPlans = splitCloudModelsByPlan(
+        allCloud.map(m => m.name),
+        FREE_CLOUD_MODELS,
+        state.cloudMirrors
+    );
     const freeCloud = cloudPlans.free.map(name => ({ name, type: 'Cloud' }));
     const paidCloud = cloudPlans.paid.map(name => ({ name, type: 'Cloud' }));
 
@@ -1058,10 +1106,18 @@ function renderMessages() {
     dom.messagesArea.innerHTML = '';
 
     if (state.messages.length === 0) {
-        const isCloud = Boolean(state.currentModel)
-            && state.cloudModels.includes(state.currentModel)
-            && !state.localModels.includes(state.currentModel);
-        const planNote = !isCloud ? '' : (isFreeCloudModel(state.currentModel, FREE_CLOUD_MODELS)
+        const model = state.currentModel;
+        const isGenuineLocal = Boolean(model)
+            && state.localModels.includes(model)
+            && !state.cloudMirrors.has(model);
+        const isCloud = Boolean(model) && !isGenuineLocal && (
+            state.cloudModels.includes(model) || state.localModels.includes(model)
+        );
+        const isFree = isCloud && (
+            isFreeCloudModel(model, FREE_CLOUD_MODELS)
+            || isFreeCloudModel(state.cloudMirrors.get(model) || '', FREE_CLOUD_MODELS)
+        );
+        const planNote = !isCloud ? '' : (isFree
             ? '<div class="model-plan-note free">☁️ Free cloud model · uses free usage credits · <a href="https://ollama.com/settings" target="_blank" rel="noopener noreferrer">Usage</a></div>'
             : '<div class="model-plan-note paid">☁️ Paid cloud model · requires a paid plan or usage credits · <a href="https://ollama.com/settings" target="_blank" rel="noopener noreferrer">Manage</a> · <a href="https://docs.ollama.com/cloud" target="_blank" rel="noopener noreferrer">Docs</a></div>');
 
@@ -1267,6 +1323,28 @@ function readWithIdleTimeout(reader, timeoutMs) {
         .finally(() => clearTimeout(timer));
 }
 
+/**
+ * Resolve a selected model to the name the local daemon serves it under.
+ * A canonical cloud name (`beam`) maps to the daemon's relay (`beam:cloud`);
+ * returns '' when the daemon does not serve the model, so callers fall back
+ * to the configured cloud endpoint.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function resolveLocalModelName(name) {
+    if (!name) return '';
+    if (state.localModels.includes(name)) return name;
+
+    const normalized = normalizeCloudModelName(name);
+    if (!normalized) return '';
+
+    for (const [daemonName, target] of state.cloudMirrors) {
+        if (normalizeCloudModelName(target) === normalized) return daemonName;
+    }
+    return '';
+}
+
 async function sendMessage() {
     const text = dom.textInput.value.trim();
     if (!text || state.isSending) return;
@@ -1277,7 +1355,11 @@ async function sendMessage() {
     }
 
     const model = state.currentModel;
-    const isLocal = state.localModels.includes(model);
+    // Cloud models stay cloud, but when the local daemon relays one (`beam` is
+    // served as `beam:cloud`) the request goes through the daemon: direct
+    // browser calls to ollama.com fail because it sends no CORS headers.
+    const localModel = resolveLocalModelName(model);
+    const isLocal = Boolean(localModel);
     const history = buildConversationContext(state.messages);
     const request = requestRegistry.start({ model, chatId: state.currentChatId });
 
@@ -1357,7 +1439,7 @@ async function sendMessage() {
 
         const supportsThinking = getModelCapabilities(model).some((cap) => cap.type === 'thinking');
         const payload = {
-            model,
+            model: localModel || model,
             messages: history.concat({ role: 'user', content: text }),
             stream: true,
             think: supportsThinking && state.qualityPreset !== 'none' ? state.qualityPreset : undefined
@@ -1782,11 +1864,19 @@ function updateHeaderControlsUI() {
  */
 function updateModelIndicator() {
     const model = state.currentModel;
-    const isLocal = Boolean(model) && state.localModels.includes(model);
-    const isCloud = Boolean(model) && state.cloudModels.includes(model) && !isLocal;
+    // Local daemon relays of cloud models count as cloud for the indicator even
+    // though requests for them still go through the daemon.
+    const isMirror = Boolean(model) && state.cloudMirrors.has(model);
+    const isLocal = Boolean(model) && state.localModels.includes(model) && !isMirror;
+    const isCloud = Boolean(model) && !isLocal
+        && (state.cloudModels.includes(model) || state.localModels.includes(model));
+    const isFree = isCloud && (
+        isFreeCloudModel(model, FREE_CLOUD_MODELS)
+        || isFreeCloudModel(state.cloudMirrors.get(model) || '', FREE_CLOUD_MODELS)
+    );
     const source = !model ? 'none'
         : isLocal ? 'local'
-            : isFreeCloudModel(model, FREE_CLOUD_MODELS) ? 'free'
+            : isFree ? 'free'
                 : isCloud ? 'paid' : 'none';
 
     if (dom.modelSelectorBtn) {

@@ -421,13 +421,17 @@
 
     /**
      * Split cloud models into free-tier and paid lists. The relative order of
-     * each list follows the input so callers can decide how to sort.
+     * each list follows the input so callers can decide how to sort. When a
+     * name has an entry in `aliasTargets` (a Map of display name -> real model
+     * name, e.g. a local daemon's cloud relay `gemma4:cloud` -> `gemma4:31b`),
+     * the target is checked as well so relays classify with their model.
      *
      * @param {unknown} models
      * @param {unknown} freeModels
+     * @param {Map<string, string>} [aliasTargets]
      * @returns {{ free: string[], paid: string[] }}
      */
-    function splitCloudModelsByPlan(models, freeModels) {
+    function splitCloudModelsByPlan(models, freeModels, aliasTargets) {
         const freeNames = new Set(
             uniqueStrings(freeModels).map(normalizeCloudModelName).filter(Boolean)
         );
@@ -435,7 +439,10 @@
         const paid = [];
 
         for (const name of uniqueStrings(models)) {
-            if (freeNames.has(normalizeCloudModelName(name))) {
+            const target = (aliasTargets instanceof Map && aliasTargets.get(name)) || '';
+            const matched = freeNames.has(normalizeCloudModelName(name))
+                || (target && freeNames.has(normalizeCloudModelName(target)));
+            if (matched) {
                 free.push(name);
             } else {
                 paid.push(name);
