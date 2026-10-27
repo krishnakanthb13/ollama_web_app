@@ -726,10 +726,14 @@ test('unsent drafts follow their conversation and survive reloads', async () => 
 
     const { context, page } = await openApp(browser, port);
 
-    const waitForReply = async () => {
+    // Capture the reply count before sending: the mock can answer before the
+    // click promise resolves, which would otherwise make the "new reply"
+    // comparison wait for a message that already arrived.
+    const sendAndWaitForReply = async (text) => {
         const before = await page.evaluate(
             () => state.messages.filter((message) => message.role === 'assistant').length
         );
+        await sendMessage(page, text);
         await page.waitForFunction(
             (count) => !state.isSending
                 && state.messages.filter((message) => message.role === 'assistant').length > count,
@@ -739,12 +743,10 @@ test('unsent drafts follow their conversation and survive reloads', async () => 
     };
 
     try {
-        await sendMessage(page, 'alpha');
-        await waitForReply();
+        await sendAndWaitForReply('alpha');
 
         await page.click('#header-new-chat-btn');
-        await sendMessage(page, 'beta');
-        await waitForReply();
+        await sendAndWaitForReply('beta');
 
         await page.click('#chat-list .chat-item:has-text("alpha")');
         await page.fill('#user-input', 'draft alpha');
@@ -780,8 +782,7 @@ test('unsent drafts follow their conversation and survive reloads', async () => 
         await page.waitForFunction(
             () => document.getElementById('user-input').value === 'draft beta'
         );
-        await sendMessage(page, 'draft beta');
-        await waitForReply();
+        await sendAndWaitForReply('draft beta');
 
         assert.equal(
             await page.$('#chat-list .chat-item:has-text("beta") .chat-draft'),
@@ -803,6 +804,51 @@ test('unsent drafts follow their conversation and survive reloads', async () => 
         await page.click('#chat-list .chat-item:has-text("alpha")');
         await page.waitForFunction(
             () => document.getElementById('user-input').value === 'draft alpha'
+        );
+    } finally {
+        await context.close();
+    }
+});
+
+test('chat rows open from the keyboard without triggering row actions', async () => {
+    server.state.models = ['gpt-oss:20b'];
+
+    const { context, page } = await openApp(browser, port);
+
+    const sendAndWait = async (text) => {
+        const before = await page.evaluate(
+            () => state.messages.filter((message) => message.role === 'assistant').length
+        );
+        await sendMessage(page, text);
+        await page.waitForFunction(
+            (count) => !state.isSending
+                && state.messages.filter((message) => message.role === 'assistant').length > count,
+            before,
+            { timeout: 10000 }
+        );
+    };
+
+    try {
+        await sendAndWait('alpha');
+        const alphaId = await page.evaluate(() => state.currentChatId);
+
+        await page.click('#header-new-chat-btn');
+        await sendAndWait('beta');
+        const betaId = await page.evaluate(() => state.currentChatId);
+
+        await page.focus(`#chat-list .chat-item[data-chat-id="${alphaId}"] .chat-item-content`);
+        await page.keyboard.press('Enter');
+        await page.waitForFunction((id) => state.currentChatId === id, alphaId);
+
+        // Enter on a nested action must not bubble into opening the row.
+        page.on('dialog', (dialog) => dialog.dismiss());
+        await page.focus(`#chat-list .chat-item[data-chat-id="${betaId}"] .delete-chat-btn`);
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(200);
+        assert.equal(
+            await page.evaluate(() => state.currentChatId),
+            alphaId,
+            'the delete button should keep the current conversation selected'
         );
     } finally {
         await context.close();
@@ -868,6 +914,60 @@ test('remote network failures explain the cloud CORS limitation', async () => {
         assert.match(text, /ollama\.com does not send CORS headers/);
         assert.match(text, /same-origin proxy/);
         assert.equal(server.state.requests.length, 0, 'the failing cloud request should not reach the mock server');
+
+        // The error is actionable rather than a dead end.
+        await page.click('.chat-error-action');
+        await page.waitForSelector('#settings-panel.active');
+        await page.waitForFunction(() => document.activeElement?.id === 'setting-cloud-url');
+        assert.match(
+            await page.textContent('#settings-panel'),
+            /Direct browser calls need CORS/,
+            'settings should repeat the proxy guidance where it can be fixed'
+        );
+    } finally {
+        await context.close();
+    }
+});
+
+test('the theme button cycles palettes and remembers the choice', async () => {
+    server.state.models = ['gpt-oss:20b'];
+
+    const { context, page } = await openApp(browser, port);
+
+    try {
+        assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'midnight');
+        assert.equal(await page.textContent('#theme-label'), 'Midnight');
+        assert.equal(
+            await page.evaluate(() => document.querySelector('meta[name="theme-color"]').content),
+            '#0b0d10'
+        );
+
+        await page.click('#theme-btn');
+        await page.waitForFunction(() => document.documentElement.dataset.theme === 'tide');
+        assert.equal(await page.textContent('#theme-label'), 'Tide');
+        assert.equal(await page.evaluate(() => localStorage.getItem('theme')), 'tide');
+        assert.equal(
+            await page.evaluate(() => getComputedStyle(document.getElementById('app')).backgroundColor),
+            'rgb(7, 23, 27)',
+            'the tide palette should be applied'
+        );
+
+        await page.click('#theme-btn');
+        await page.waitForFunction(() => document.documentElement.dataset.theme === 'paper');
+        assert.equal(await page.textContent('#theme-label'), 'Paper');
+
+        await page.click('#theme-btn');
+        await page.waitForFunction(() => document.documentElement.dataset.theme === 'midnight');
+
+        await page.click('#theme-btn');
+        await page.waitForFunction(() => document.documentElement.dataset.theme === 'tide');
+        await page.reload();
+        await page.waitForFunction(
+            () => document.querySelectorAll('#model-list .model-option').length > 0
+                && document.getElementById('sidebar').style.width !== ''
+        );
+        assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'tide');
+        assert.equal(await page.textContent('#theme-label'), 'Tide');
     } finally {
         await context.close();
     }

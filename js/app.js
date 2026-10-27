@@ -221,6 +221,10 @@ const DEFAULT_CLOUD_MODELS = [
 // newly introduced free models once instead of silently keeping stale storage.
 const CLOUD_CATALOG_VERSION = '1';
 const DRAFTS_KEY = 'drafts';
+const THEMES = ['midnight', 'tide', 'paper'];
+const THEME_LABELS = { midnight: 'Midnight', tide: 'Tide', paper: 'Paper' };
+const THEME_COLORS = { midnight: '#0b0d10', tide: '#07171b', paper: '#f4f2ec' };
+const THEME_STORAGE_KEY = 'theme';
 
 function loadStoredCloudModels() {
     const stored = uniqueStrings(
@@ -272,6 +276,7 @@ const state = {
     qualityPreset: normalizeChoice(safeStorageGet('qualityPreset'), ['none', 'low', 'medium', 'high'], 'none'),
     sortOrder: normalizeChoice(safeStorageGet('sortOrder'), ['default', 'az'], 'default'),
     fontSize: normalizeChoice(safeStorageGet('fontSize'), ['small', 'medium', 'large'], 'medium'),
+    theme: normalizeChoice(safeStorageGet(THEME_STORAGE_KEY), THEMES, 'midnight'),
     sidebarWidth: normalizeSidebarWidth(safeStorageGet('sidebarWidth'), '280px')
 };
 
@@ -283,6 +288,7 @@ async function init() {
     console.log('App initializing...');
     try {
         bindDomElements();
+        applyTheme(state.theme, { persist: false, announce: false });
         setupEventListeners();
 
         await loadModels();
@@ -316,6 +322,9 @@ function bindDomElements() {
     dom.textInput = document.getElementById('user-input');
     dom.sendBtn = document.getElementById('send-btn');
     dom.stopBtn = document.getElementById('stop-btn');
+    dom.toast = document.getElementById('toast');
+    dom.chatCount = document.getElementById('chat-count');
+    dom.composerModel = document.getElementById('composer-model');
 
     // Sidebar Buttons
     dom.menuBtn = document.getElementById('menu-btn');
@@ -325,6 +334,8 @@ function bindDomElements() {
 
     // Header controls
     dom.thinkingBtn = document.getElementById('thinking-btn');
+    dom.themeBtn = document.getElementById('theme-btn');
+    dom.themeLabel = document.getElementById('theme-label');
 
     // NEW Dropdowns
     dom.modelSelectorBtn = document.getElementById('model-selector-btn');
@@ -378,8 +389,30 @@ function setupEventListeners() {
     dom.newChatBtn?.addEventListener('click', createNewChat);
     dom.headerNewChatBtn?.addEventListener('click', createNewChat);
 
+    document.getElementById('chat-list')?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const content = event.target.closest('.chat-item-content');
+        if (!content || event.target !== content) return;
+        event.preventDefault();
+        content.click();
+    });
+
     // Header Controls
     dom.thinkingBtn?.addEventListener('click', toggleThinking);
+    dom.themeBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        cycleTheme();
+    });
+
+    // Role="button" elements need explicit keyboard activation.
+    [dom.modelSelectorBtn, dom.qualityBtn].forEach((element) => {
+        element?.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            event.stopPropagation();
+            element.click();
+        });
+    });
 
     // Dropdown Toggles
     // Dropdown Toggles
@@ -525,6 +558,7 @@ function toggleDropdown(type) {
     closeAllDropdowns();
     if (!isVisible) {
         target.classList.add('show');
+        (type === 'model' ? dom.modelSelectorBtn : dom.qualityBtn)?.setAttribute('aria-expanded', 'true');
         if (type === 'model' && dom.modelSearchInput) {
             setTimeout(() => dom.modelSearchInput.focus(), 100);
         }
@@ -532,8 +566,54 @@ function toggleDropdown(type) {
 }
 
 function closeAllDropdowns() {
-    if (dom.modelDropdown) dom.modelDropdown.classList.remove('show');
-    if (dom.qualityDropdown) dom.qualityDropdown.classList.remove('show');
+    if (dom.modelDropdown) {
+        dom.modelDropdown.classList.remove('show');
+        dom.modelSelectorBtn?.setAttribute('aria-expanded', 'false');
+    }
+    if (dom.qualityDropdown) {
+        dom.qualityDropdown.classList.remove('show');
+        dom.qualityBtn?.setAttribute('aria-expanded', 'false');
+    }
+}
+
+function applyTheme(theme, { persist = true, announce = true } = {}) {
+    const next = THEMES.includes(theme) ? theme : 'midnight';
+    state.theme = next;
+
+    document.documentElement.setAttribute('data-theme', next);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLORS[next]);
+
+    if (persist) {
+        try {
+            localStorage.setItem(THEME_STORAGE_KEY, next);
+        } catch (error) {
+            // The theme still applies for this session when storage is blocked.
+        }
+    }
+
+    const label = THEME_LABELS[next];
+    if (dom.themeLabel) dom.themeLabel.textContent = label;
+    if (dom.themeBtn) {
+        dom.themeBtn.setAttribute('aria-label', `Theme: ${label}. Change theme`);
+        dom.themeBtn.title = `Theme: ${label}`;
+    }
+
+    if (announce) showToast(`${label} theme`);
+}
+
+function cycleTheme() {
+    const index = THEMES.indexOf(state.theme);
+    const next = THEMES[(index + 1) % THEMES.length];
+    applyTheme(next);
+}
+
+let toastTimer = null;
+function showToast(message) {
+    if (!dom.toast) return;
+    dom.toast.textContent = message;
+    dom.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => dom.toast?.classList.remove('show'), 1800);
 }
 
 function setQualityPreset(value) {
@@ -546,10 +626,12 @@ function setQualityPreset(value) {
 function setSortOrder(order) {
     state.sortOrder = order;
     localStorage.setItem('sortOrder', order);
-    dom.sortDefault.style.background = order === 'default' ? 'var(--accent)' : 'var(--bg-tertiary)';
-    dom.sortDefault.style.color = order === 'default' ? 'white' : 'var(--text-secondary)';
-    dom.sortAz.style.background = order === 'az' ? 'var(--accent)' : 'var(--bg-tertiary)';
-    dom.sortAz.style.color = order === 'az' ? 'white' : 'var(--text-secondary)';
+
+    dom.sortDefault?.classList.toggle('active', order === 'default');
+    dom.sortDefault?.setAttribute('aria-pressed', String(order === 'default'));
+    dom.sortAz?.classList.toggle('active', order === 'az');
+    dom.sortAz?.setAttribute('aria-pressed', String(order === 'az'));
+
     renderModelList();
 }
 
@@ -616,7 +698,7 @@ function validateCurrentModel() {
 
     if (available.length === 0) {
         state.currentModel = '';
-        if (dom.currentModelName) dom.currentModelName.textContent = 'Select Model...';
+        if (dom.currentModelName) dom.currentModelName.textContent = 'Select model…';
         updateHeaderControlsUI();
         return;
     }
@@ -638,30 +720,33 @@ function renderModelList() {
     const createItem = (name, type) => {
         const div = document.createElement('div');
         div.className = `model-option ${name === state.currentModel ? 'selected' : ''}`;
-
-        // Slight theme difference for local vs cloud
-        if (type === 'Local') {
-            div.style.backgroundColor = 'rgba(99, 102, 241, 0.03)'; // Subtle tint of accent
-        } else {
-            div.style.backgroundColor = 'rgba(255, 255, 255, 0.02)'; // Subtle neutral
-        }
+        div.dataset.source = type.toLowerCase();
+        div.setAttribute('role', 'option');
+        div.setAttribute('aria-selected', String(name === state.currentModel));
+        div.tabIndex = 0;
 
         const caps = getModelCapabilities(name);
         const icons = caps.length > 0 ? caps.map(c => c.icon).join(' ') : (type === 'Local' ? '💻' : '☁️');
         const safeName = escapeHtml(name);
 
         div.innerHTML = `
-            <div class="model-info" style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; width: 100%; gap: 12px;">
-                <span class="model-name" style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${safeName}</span>
-                <span class="model-icon" style="font-size: 0.9rem; opacity: 0.8; flex-shrink: 0;">${icons}</span>
+            <div class="model-info">
+                <span class="model-name">${safeName}</span>
+                <span class="model-icon" aria-hidden="true">${icons}</span>
             </div>
-            ${name === state.currentModel ? '<span class="check-icon" style="color:var(--accent); margin-left: 8px;">✓</span>' : ''}
+            ${name === state.currentModel ? '<span class="check-icon" aria-hidden="true">✓</span>' : ''}
         `;
         div.onclick = (e) => {
             e.stopPropagation();
             setModel(name);
             closeAllDropdowns();
         };
+        div.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            e.stopPropagation();
+            div.click();
+        });
         return div;
     };
 
@@ -690,16 +775,7 @@ function renderModelList() {
         if (models.length === 0) return;
 
         const header = document.createElement('div');
-        header.className = 'model-group-header';
-        header.style.padding = '8px 12px';
-        if (marginTop) header.style.marginTop = '8px';
-        header.style.fontWeight = 'bold';
-        header.style.fontSize = '0.8rem';
-        header.style.color = 'var(--text-secondary)';
-        header.style.display = 'flex';
-        header.style.alignItems = 'center';
-        header.style.justifyContent = 'space-between';
-        header.style.gap = '8px';
+        header.className = `model-group-header${marginTop ? ' spaced' : ''}`;
 
         const label = document.createElement('span');
         label.className = 'model-group-title';
@@ -728,10 +804,8 @@ function renderModelList() {
 
     if (allLocal.length === 0 && freeCloud.length === 0 && paidCloud.length === 0) {
         const noRes = document.createElement('div');
-        noRes.style.padding = '1rem';
-        noRes.style.textAlign = 'center';
-        noRes.style.color = 'var(--text-secondary)';
-        noRes.textContent = 'No models found';
+        noRes.className = 'model-empty';
+        noRes.textContent = state.modelSearchQuery ? 'No models match that search' : 'No models found';
         container.appendChild(noRes);
     }
 }
@@ -762,20 +836,30 @@ function renderChatList() {
     const list = document.getElementById('chat-list');
     if (!list) return;
     const drafts = readDrafts();
+    if (dom.chatCount) dom.chatCount.textContent = String(state.chats.length);
+
     list.innerHTML = state.chats.map(chat => {
         const hasDraft = Boolean(drafts[`chat:${chat.id}`]);
         return `
-        <div class="chat-item ${chat.id === state.currentChatId ? 'active' : ''}" data-chat-id="${chat.id}" onclick="loadChat(${chat.id})">
-            <div class="chat-item-content">
+        <div class="chat-item ${chat.id === state.currentChatId ? 'active' : ''}" data-chat-id="${chat.id}"
+            role="listitem" onclick="loadChat(${chat.id})">
+            <div class="chat-item-content" role="button" tabindex="0"
+                aria-label="Open chat: ${escapeHtml(chat.title || 'Untitled chat')}">
                 <div class="chat-item-title">${escapeHtml(chat.title || 'Untitled chat')}</div>
-                <div class="chat-item-date">${chat.model ? escapeHtml(chat.model) + ' • ' : ''}${new Date(chat.updated_at).toLocaleDateString()}${hasDraft ? '<span class="chat-draft">Draft</span>' : ''}</div>
+                <div class="chat-item-date">
+                    ${chat.model ? `<span class="chat-model">${escapeHtml(chat.model)}</span>` : ''}
+                    <span class="chat-date">${new Date(chat.updated_at).toLocaleDateString()}</span>
+                    ${hasDraft ? '<span class="chat-draft">Draft</span>' : ''}
+                </div>
             </div>
-            <div style="display:flex; opacity:0; transition: opacity 0.2s;" class="chat-actions">
-                <button class="download-chat-btn" onclick="exportChatToMarkdown(event, ${chat.id})" title="Download as Markdown">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M480-320 280-520l56-56 104 104v-328h80v328l104-104 56 56-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg>
+            <div class="chat-actions">
+                <button class="download-chat-btn" type="button" onclick="exportChatToMarkdown(event, ${chat.id})"
+                    title="Download as Markdown" aria-label="Download chat as Markdown">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor" aria-hidden="true"><path d="M480-320 280-520l56-56 104 104v-328h80v328l104-104 56 56-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg>
                 </button>
-                <button class="delete-chat-btn" onclick="deleteChat(event, ${chat.id})" title="Delete Chat">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T720-120H280Zm440-600H240v520q0 8 6 14t14 6h440q8 0 14-6t6-14v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM240-720v520-520Z"/></svg>
+                <button class="delete-chat-btn" type="button" onclick="deleteChat(event, ${chat.id})"
+                    title="Delete chat" aria-label="Delete chat">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor" aria-hidden="true"><path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T720-120H280Zm440-600H240v520q0 8 6 14t14 6h440q8 0 14-6t6-14v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM240-720v520-520Z"/></svg>
                 </button>
             </div>
         </div>
@@ -967,8 +1051,16 @@ function renderMessages() {
             : '<div class="model-plan-note paid">☁️ Paid cloud model · requires a paid plan or usage credits · <a href="https://ollama.com/settings" target="_blank" rel="noopener noreferrer">Manage</a></div>');
 
         dom.messagesArea.innerHTML = `
-            <div class="message assistant-msg" style="opacity: 0.5; text-align: center; margin-top: 2rem;">
-                 <div class="message-content">Start a conversation using ${escapeHtml(state.currentModel || 'Ollama')}${planNote}</div>
+            <div class="empty-state">
+                <p class="empty-eyebrow">Channel open</p>
+                <h2 class="empty-title">What should we <em>think through?</em></h2>
+                <p class="empty-sub">You're talking to <strong>${escapeHtml(state.currentModel || 'Ollama')}</strong>. Ask a question, paste an error, or sketch an idea — your history stays on this device.</p>
+                ${planNote}
+                <ul class="empty-hints">
+                    <li><kbd>Enter</kbd><span>send</span></li>
+                    <li><kbd>Shift</kbd><span>+</span><kbd>Enter</kbd><span>new line</span></li>
+                    <li><kbd>Esc</kbd><span>close menus</span></li>
+                </ul>
             </div>`;
         return;
     }
@@ -1002,6 +1094,9 @@ function appendMessageToUI(msg) {
 
     // Meta / Actions Row
     div.appendChild(createMessageMetaRow(msg));
+
+    // The first real message replaces the empty-state hero.
+    dom.messagesArea?.querySelector('.empty-state')?.remove();
 
     if (dom.messagesArea) dom.messagesArea.appendChild(div);
     scrollToBottom();
@@ -1075,12 +1170,33 @@ function createMessageMetaRow(msg) {
     return metaRow;
 }
 
-function showChatError(message) {
+function showChatError(message, { focus = 'cloud' } = {}) {
     const errorBlock = document.createElement('div');
     errorBlock.className = 'chat-error';
-    errorBlock.style.color = 'var(--error)';
-    errorBlock.style.marginTop = '10px';
-    errorBlock.textContent = message;
+
+    const title = document.createElement('p');
+    title.className = 'chat-error-title';
+    title.textContent = 'Request failed';
+
+    const body = document.createElement('p');
+    body.className = 'chat-error-body';
+    body.textContent = message;
+
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.className = 'chat-error-action';
+    action.textContent = 'Open connection settings';
+    action.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openSettings();
+        window.setTimeout(() => {
+            const field = focus === 'local' ? dom.inputLocalUrl : dom.inputCloudUrl;
+            field?.focus();
+            field?.select();
+        }, 340);
+    });
+
+    errorBlock.append(title, body, action);
     return errorBlock;
 }
 
@@ -1302,7 +1418,10 @@ async function sendMessage() {
             hadError = true;
             console.error('Chat request failed', e);
             if (contentBlock) {
-                contentBlock.appendChild(showChatError(`Error: ${describeFetchFailure(url, e)}`));
+                contentBlock.appendChild(showChatError(
+                    `Error: ${describeFetchFailure(url, e)}`,
+                    { focus: isLocal ? 'local' : 'cloud' }
+                ));
             }
         }
     } finally {
@@ -1394,16 +1513,19 @@ function saveSettings() {
 
     closeSettings();
     loadModels();
+    showToast('Connection settings saved');
 }
 
 function toggleCloudList() {
     const isShowing = dom.cloudModelListContainer.classList.toggle('show');
-    dom.toggleCloudBtn.textContent = isShowing ? 'Hide List' : 'Show All';
+    dom.toggleCloudBtn.textContent = isShowing ? 'Hide list' : 'Show all';
+    dom.toggleCloudBtn.setAttribute('aria-expanded', String(isShowing));
 }
 
 function toggleLocalList() {
     const isShowing = dom.localModelListContainer.classList.toggle('show');
     dom.toggleLocalBtn.textContent = isShowing ? 'Hide' : 'Show';
+    dom.toggleLocalBtn.setAttribute('aria-expanded', String(isShowing));
 }
 
 function renderLocalModelEditor() {
@@ -1412,7 +1534,7 @@ function renderLocalModelEditor() {
     const fragment = document.createDocumentFragment();
 
     if (state.localModels.length === 0) {
-        dom.localModelList.innerHTML = '<div style="color:var(--text-secondary); padding:8px;">No local models found. Check connection.</div>';
+        dom.localModelList.innerHTML = '<div class="settings-empty">No local models found. Check the connection in the field above.</div>';
         return;
     }
 
@@ -1451,6 +1573,7 @@ function togglePasswordVisibility(e) {
     const input = dom.inputCloudKey;
     const isPassword = input.getAttribute('type') === 'password';
     input.setAttribute('type', isPassword ? 'text' : 'password');
+    dom.togglePasswordBtn.setAttribute('aria-label', isPassword ? 'Hide API key' : 'Show API key');
 
     // Toggle icon (simple swap or Rotate)
     dom.togglePasswordBtn.innerHTML = isPassword ?
@@ -1541,7 +1664,9 @@ function applyFontSize(size) {
     localStorage.setItem('fontSize', size);
 
     document.querySelectorAll('.font-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.size === size);
+        const active = btn.dataset.size === size;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', String(active));
     });
 }
 
@@ -1567,14 +1692,17 @@ function toggleDropdownNS(name, force) {
     if (name !== 'quality' && dom.qualityDropdown) dom.qualityDropdown.classList.remove('show');
 
     const isShow = typeof force === 'boolean' ? force : !dropdown.classList.contains('show');
+    const trigger = name === 'model' ? dom.modelSelectorBtn : dom.qualityBtn;
     if (isShow) {
         dropdown.classList.add('show');
+        trigger?.setAttribute('aria-expanded', 'true');
         // Auto focus search if model dropdown
         if (name === 'model' && dom.modelSearchInput) {
             setTimeout(() => dom.modelSearchInput.focus(), 50);
         }
     } else {
         dropdown.classList.remove('show');
+        trigger?.setAttribute('aria-expanded', 'false');
     }
 }
 
@@ -1619,14 +1747,42 @@ function updateHeaderControlsUI() {
     // Show only the controls the selected model can actually use.
     if (dom.thinkingBtn) {
         dom.thinkingBtn.style.display = hasThinking ? 'flex' : 'none';
-        dom.thinkingBtn.style.backgroundColor = state.showThinking ? 'var(--accent)' : 'var(--bg-tertiary)';
-        dom.thinkingBtn.style.color = state.showThinking ? 'white' : 'var(--text-secondary)';
+        dom.thinkingBtn.classList.toggle('active', state.showThinking);
+        dom.thinkingBtn.setAttribute('aria-pressed', String(state.showThinking));
     }
     if (dom.qualityBtn) dom.qualityBtn.style.display = hasThinking ? 'flex' : 'none';
 
     if (dom.currentQualityName) {
         const labels = { 'none': 'Std', 'low': 'Low', 'medium': 'Med', 'high': 'High' };
         dom.currentQualityName.textContent = labels[state.qualityPreset] || 'Std';
+    }
+
+    updateModelIndicator();
+}
+
+/**
+ * Mirror the selected model's source (local, free cloud, paid cloud) onto the
+ * header chip and the composer footer. The dot is the quickest way to see
+ * whether a prompt will stay on the machine or leave it.
+ */
+function updateModelIndicator() {
+    const model = state.currentModel;
+    const isLocal = Boolean(model) && state.localModels.includes(model);
+    const isCloud = Boolean(model) && state.cloudModels.includes(model) && !isLocal;
+    const source = !model ? 'none'
+        : isLocal ? 'local'
+            : isFreeCloudModel(model, FREE_CLOUD_MODELS) ? 'free'
+                : isCloud ? 'paid' : 'none';
+
+    if (dom.modelSelectorBtn) {
+        dom.modelSelectorBtn.dataset.source = source;
+        dom.modelSelectorBtn.title = model || 'Select a model';
+    }
+    if (dom.composerModel) {
+        const kind = source === 'local' ? 'Local' : source === 'free' ? 'Free cloud' : source === 'paid' ? 'Cloud' : '';
+        dom.composerModel.textContent = model
+            ? (kind ? `${kind} · ${model}` : model)
+            : 'No model selected';
     }
 }
 document.addEventListener('DOMContentLoaded', init);

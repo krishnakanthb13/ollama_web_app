@@ -26,6 +26,26 @@ Copyright (c) 2011-2018, Christopher Jeffrey. (MIT License)
 
 Copyright (c) Cure53 and other contributors.
 
+## Instrument Sans
+
+- Files: `vendor/fonts/instrument-sans-latin.woff2`
+- Project: https://github.com/Instrument/instrument-sans
+- License: SIL Open Font License 1.1
+- License text: `vendor/fonts/LICENSE.instrument-sans.txt`
+
+Copyright 2022 The Instrument Sans Project Authors
+(https://github.com/Instrument/instrument-sans)
+
+## Bricolage Grotesque
+
+- Files: `vendor/fonts/bricolage-grotesque-latin.woff2`
+- Project: https://github.com/ateliertriay/bricolage
+- License: SIL Open Font License 1.1
+- License text: `vendor/fonts/LICENSE.bricolage-grotesque.txt`
+
+Copyright 2022 The Bricolage Grotesque Project Authors
+(https://github.com/ateliertriay/bricolage)
+
 ## Bundled assets
 
 `assets/ollama.png` is the Ollama logo, used for the app icon and favicon.

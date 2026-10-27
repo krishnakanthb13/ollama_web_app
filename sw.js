@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ollama-pwa-v20';
+const CACHE_NAME = 'ollama-pwa-v21';
 const ASSETS = [
     './',
     './index.html',
@@ -7,6 +7,8 @@ const ASSETS = [
     './js/app.js',
     './vendor/marked.umd.js?v=18.1.2',
     './vendor/purify.min.js?v=3.4.17',
+    './vendor/fonts/instrument-sans-latin.woff2',
+    './vendor/fonts/bricolage-grotesque-latin.woff2',
     './assets/ollama.png'
 ];
 

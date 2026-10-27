@@ -25,8 +25,9 @@ Interaction with local Large Language Models (LLMs) like Ollama is typically don
 
 ### 4. Aesthetics Without Bloat
 - We use modern CSS variables and flexbox/grid layouts.
-- Themes (Dark Mode, Indigo Accents) are built-in without heavy UI libraries like Bootstrap or Tailwind.
-- Animations are CSS-based for 60fps performance using `will-change`.
+- Three coordinated palettes — Midnight (ink + brass), Tide (petrol + coral) and Paper (porcelain + forest) — share one semantic token set, so no heavy UI library is needed.
+- Typography pairs vendored Bricolage Grotesque (display) with Instrument Sans (body). Both fonts ship with the app, keeping it offline-friendly and CSP-clean.
+- Animations are CSS-based and respect `prefers-reduced-motion`.
 
 ## Target Audience
 - Developers who use Ollama and want a quick GUI.

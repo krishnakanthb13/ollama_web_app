@@ -4,11 +4,11 @@
 
 - `index.html`: The main entry point for the application. It bundles the UI structure, declares the Content-Security-Policy and loads the vendored Markdown libraries.
 - `css/`: Contains the styling for the application.
-  - `styles.css`: The primary stylesheet containing CSS variables, dark mode themes, component styles, and responsiveness logic.
+  - `styles.css`: The primary stylesheet: semantic theme tokens, component styles, typography and responsiveness rules.
 - `js/`: Contains the application logic.
   - `app.js`: The monolithic JavaScript file handling state, IndexedDB interactions, UI rendering, event listeners, and API calls to Ollama.
   - `utils.js`: Dependency-free shared helpers (HTML escaping, storage parsing, NDJSON parsing, URL normalisation). Loaded before `app.js` and also consumable by the Node test suite.
-- `vendor/`: Locally hosted third-party libraries and their license texts (see `THIRD_PARTY_NOTICES.md`).
+- `vendor/`: Locally hosted third-party libraries and their license texts (see `THIRD_PARTY_NOTICES.md`). `vendor/fonts/` holds the two variable fonts used by the UI.
 - `tests/`: Node-based unit tests (`node:test`) and headless-browser tests (Playwright Core against the installed Chrome channel), including a mock Ollama server.
 - `sw.js`: The Service Worker file responsible for caching assets (HTML, CSS, JS, Images) to enable PWAs to work offline.
 - `manifest.json`: Metadata for the Progressive Web App (PWA) installation.
@@ -22,6 +22,33 @@ The Ollama Web App follows a **client-side only** architecture (Single Page Appl
 2.  **Logic Layer**: Vanilla JavaScript (ES6+).
 3.  **Data Layer**: IndexedDB (`OllamaWebApp`) for persistent storage of chats and messages.
 4.  **Network Layer**: `fetch` API to communicate with Ollama (`/api/tags`, `/api/chat`).
+
+### Visual design and themes
+
+The interface is an “instrument panel”: an editorial console built from fine
+hairlines, micro-labels and a two-font pairing. Bricolage Grotesque (display)
+and Instrument Sans (body) are vendored in `vendor/fonts/` and preloaded, so
+typography is identical offline and under the CSP.
+
+Three coordinated palettes are defined as token sets on `html[data-theme]`:
+
+- `midnight` (default) — ink and brass.
+- `tide` — petrol and coral.
+- `paper` — porcelain and forest.
+
+Every colour decision reads from semantic tokens (`--bg-*`, `--text-*`,
+`--accent*`, `--success-soft`, ...), so switching a theme restyles the whole app
+without component overrides. The header theme button cycles midnight → tide →
+paper, persists the choice under `theme`, and updates
+`meta[name="theme-color"]`. An inline boot script applies the saved theme before
+first paint to avoid a flash. Text tokens meet WCAG AA contrast on both the
+primary and secondary surfaces. The selected model's source (local, free cloud,
+paid cloud) is mirrored as a status dot in the model chip.
+
+Failures render as an actionable error card rather than a red paragraph. The
+card explains the CORS or local-daemon problem and its **Open connection
+settings** button opens the panel and focuses the relevant URL field (local or
+cloud).
 
 ### Cloud endpoints and CORS
 
@@ -93,6 +120,8 @@ so private browsing or a full quota cannot break chat.
 | **State** | `state` object | Holds global app state (`currentChatId`, `models`, `settings`). |
 | | `validateCurrentModel()` | Falls back to the first available model when the stored selection no longer exists. |
 | | `updateHeaderControlsUI()` | Shows only the controls the selected model supports and keeps the quality label in sync. |
+| | `updateModelIndicator()` | Mirrors the selected model's local/free/paid source onto the header chip and composer footer. |
+| **Themes** | `applyTheme()` / `cycleTheme()` | Apply a palette token set, persist the choice and update the theme button, label and browser theme colour. |
 | **Capabilities** | `getModelCapabilities()` | Detects thinking, tools and size support from the model name. |
 | **Initialization** | `init()` | Bootstraps the app: binds DOM, loads models, restores settings. |
 | | `loadStoredCloudModels()` / `refreshCloudModels()` | Backfills the free-tier catalogue once and refreshes the cached cloud list from a reachable `/tags` endpoint. |
@@ -114,6 +143,7 @@ so private browsing or a full quota cannot break chat.
 | | `mergeCloudModels()` | Merges catalogue additions without duplicating the same model under an API name and CLI alias. |
 | | `normalizeEndpointUrl()` / `canSendApiKey()` | Validates endpoint URLs and blocks API keys on insecure remote connections. |
 | | `describeFetchFailure()` | Adds local Ollama or cloud CORS guidance to network failures. |
+| | `showChatError()` | Renders a failure as a titled card with an action that opens the matching connection settings. |
 | **Settings** | `openSettings()` | Toggles the settings panel. |
 | | `toggleCloudList()` | Expands/collapses the cloud model configuration section. |
 
@@ -132,6 +162,8 @@ so private browsing or a full quota cannot break chat.
 - **Libraries (vendored)**:
   - `vendor/marked.umd.js` (18.1.2): For parsing Markdown in chat messages.
   - `vendor/purify.min.js` (3.4.17): For sanitizing rendered HTML to prevent XSS.
+  - `vendor/fonts/*.woff2`: Instrument Sans and Bricolage Grotesque variable
+    fonts, licensed under the SIL Open Font License 1.1.
   - No CDN is used at runtime, so the app loads offline and under its CSP. See
     `THIRD_PARTY_NOTICES.md` and the license files in `vendor/`.
 

@@ -4,8 +4,8 @@
     "description": "A powerful web interface for interacting with Ollama models.",
     "start_url": "./index.html",
     "display": "standalone",
-    "background_color": "#0a0a0b",
-    "theme_color": "#6366f1",
+    "background_color": "#060709",
+    "theme_color": "#0b0d10",
     "icons": [
         {
             "src": "assets/ollama.png",
