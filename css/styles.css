@@ -1158,6 +1158,21 @@ textarea:focus {
   transition: opacity 0.3s;
 }
 
+#overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The sidebar is permanently visible on desktop; the mobile drawer controls
+   would otherwise open a blocking overlay with no visible effect. */
+@media (min-width: 769px) {
+  #menu-btn,
+  #close-sidebar-btn,
+  #overlay {
+    display: none;
+  }
+}
+
 /* Animation */
 @keyframes fadeIn {
   from {

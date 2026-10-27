@@ -58,3 +58,62 @@ test('chat titles are rendered as text, not HTML', async () => {
         await context.close();
     }
 });
+
+test('scrollToBottom moves the chat scroller to the latest content', async () => {
+    server.state.models = ['good-model:latest-cloud'];
+    const { context, page } = await openApp(browser, port);
+
+    try {
+        const metrics = await page.evaluate(() => {
+            const area = document.getElementById('messages-area');
+            for (let index = 0; index < 80; index += 1) {
+                const message = document.createElement('div');
+                message.className = 'message assistant-msg';
+                message.textContent = `Line ${index} ${'lorem ipsum '.repeat(20)}`;
+                area.appendChild(message);
+            }
+            scrollToBottom();
+            const scroller = document.getElementById('chat-container');
+            return {
+                scrollTop: scroller.scrollTop,
+                scrollHeight: scroller.scrollHeight,
+                clientHeight: scroller.clientHeight
+            };
+        });
+
+        assert.ok(metrics.scrollHeight > metrics.clientHeight, 'test content should overflow');
+        assert.ok(metrics.scrollTop > 0, 'the chat scroller should have moved');
+        assert.ok(
+            Math.abs(metrics.scrollTop + metrics.clientHeight - metrics.scrollHeight) <= 2,
+            'the chat scroller should be pinned to the bottom'
+        );
+    } finally {
+        await context.close();
+    }
+});
+
+test('mobile sidebar closes from the overlay and Escape', async () => {
+    server.state.models = ['good-model:latest-cloud'];
+    const { context, page } = await openApp(browser, port, {}, { width: 375, height: 667 });
+
+    try {
+        await page.click('#menu-btn');
+        await page.waitForFunction(() => {
+            const style = getComputedStyle(document.getElementById('overlay'));
+            return style.opacity === '1' && style.pointerEvents === 'auto';
+        });
+
+        await page.mouse.click(350, 300);
+        await page.waitForFunction(
+            () => !document.getElementById('sidebar').classList.contains('open')
+        );
+
+        await page.click('#menu-btn');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(
+            () => !document.getElementById('sidebar').classList.contains('open')
+        );
+    } finally {
+        await context.close();
+    }
+});

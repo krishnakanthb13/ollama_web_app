@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { escapeHtml } = require('../js/utils.js');
+const { escapeHtml, scrollElementToBottom } = require('../js/utils.js');
 
 test('escapeHtml escapes HTML metacharacters', () => {
     assert.equal(
@@ -27,4 +27,15 @@ test('escapeHtml handles null, undefined and numbers', () => {
 
 test('escapeHtml leaves benign text untouched', () => {
     assert.equal(escapeHtml('llama3.1:8b • 2026-10-27'), 'llama3.1:8b • 2026-10-27');
+});
+
+test('scrollElementToBottom moves the supplied scroll container', () => {
+    const element = { scrollTop: 0, scrollHeight: 4321 };
+    scrollElementToBottom(element);
+    assert.equal(element.scrollTop, 4321);
+});
+
+test('scrollElementToBottom tolerates a missing container', () => {
+    assert.doesNotThrow(() => scrollElementToBottom(null));
+    assert.doesNotThrow(() => scrollElementToBottom(undefined));
 });

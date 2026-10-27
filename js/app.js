@@ -1,5 +1,5 @@
 // --- DB Logic (Inlined for compatibility) ---
-const { escapeHtml } = window.AppUtils;
+const { escapeHtml, scrollElementToBottom } = window.AppUtils;
 const DB_NAME = 'OllamaWebApp';
 const DB_VERSION = 1;
 
@@ -236,6 +236,8 @@ function bindDomElements() {
     // App Structure
     dom.app = document.getElementById('app');
     dom.sidebar = document.getElementById('sidebar');
+    dom.overlay = document.getElementById('overlay');
+    dom.chatContainer = document.getElementById('chat-container');
     dom.messagesArea = document.getElementById('messages-area');
     dom.textInput = document.getElementById('user-input');
     dom.sendBtn = document.getElementById('send-btn');
@@ -298,6 +300,7 @@ function setupEventListeners() {
     // Sidebar
     dom.menuBtn?.addEventListener('click', () => toggleSidebar(true));
     dom.closeSidebarBtn?.addEventListener('click', () => toggleSidebar(false));
+    dom.overlay?.addEventListener('click', () => toggleSidebar(false));
     dom.newChatBtn?.addEventListener('click', createNewChat);
     dom.headerNewChatBtn?.addEventListener('click', createNewChat);
 
@@ -393,6 +396,14 @@ function setupEventListeners() {
             e.target !== dom.settingsBtn) {
             closeSettings();
         }
+    });
+
+    // Keyboard dismissal for transient overlays
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        closeAllDropdowns();
+        if (dom.settingsPanel?.classList.contains('active')) closeSettings();
+        if (dom.sidebar?.classList.contains('open')) toggleSidebar(false);
     });
 
     // Font
@@ -1085,13 +1096,8 @@ async function downloadDbExport() {
 // --- Helpers ---
 function toggleSidebar(open) {
     state.isSidebarOpen = open;
-    if (open) {
-        dom.sidebar.classList.add('open');
-        document.getElementById('overlay').classList.add('active');
-    } else {
-        dom.sidebar.classList.remove('open');
-        document.getElementById('overlay').classList.remove('active');
-    }
+    dom.sidebar?.classList.toggle('open', open);
+    dom.overlay?.classList.toggle('active', open);
 }
 
 function openModelSelector() {
@@ -1105,7 +1111,7 @@ function autoResizeInput() {
 }
 
 function scrollToBottom() {
-    if (dom.messagesArea) dom.messagesArea.scrollTop = dom.messagesArea.scrollHeight;
+    scrollElementToBottom(dom.chatContainer);
 }
 
 function applyFontSize(size) {

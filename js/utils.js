@@ -37,5 +37,16 @@
         return String(value ?? '').replace(/[&<>"']/g, (char) => HTML_ENTITIES[char]);
     }
 
-    return { escapeHtml };
+    /**
+     * Scroll a container to its latest content. Kept as a helper so the
+     * browser code and tests share the same behaviour.
+     *
+     * @param {{ scrollTop: number, scrollHeight: number } | null | undefined} element
+     */
+    function scrollElementToBottom(element) {
+        if (!element) return;
+        element.scrollTop = element.scrollHeight;
+    }
+
+    return { escapeHtml, scrollElementToBottom };
 });

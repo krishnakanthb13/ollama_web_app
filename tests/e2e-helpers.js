@@ -13,10 +13,10 @@ async function launchBrowser() {
  * configured and the service worker disabled (so every run exercises the
  * current files, not a cached copy).
  */
-async function openApp(browser, port, storage = {}) {
+async function openApp(browser, port, storage = {}, viewport = { width: 1280, height: 900 }) {
     const context = await browser.newContext({
         serviceWorkers: 'block',
-        viewport: { width: 1280, height: 900 }
+        viewport
     });
     const page = await context.newPage();
     const pageErrors = [];
