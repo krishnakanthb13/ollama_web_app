@@ -10,6 +10,7 @@ const {
     normalizeChoice,
     normalizeSidebarWidth,
     uniqueStrings,
+    buildConversationContext,
     isFreeCloudModel,
     mergeCloudModels,
     splitCloudModelsByPlan,
@@ -1046,7 +1047,7 @@ async function sendMessage() {
 
     const model = state.currentModel;
     const isLocal = state.localModels.includes(model);
-    const history = state.messages.map((message) => ({ role: message.role, content: message.content }));
+    const history = buildConversationContext(state.messages);
     const request = requestRegistry.start({ model, chatId: state.currentChatId });
     setSendingUi(true);
 

@@ -667,6 +667,41 @@ test('the non-functional web-search control and payload are removed', async () =
     }
 });
 
+test('long chats send only the newest context within the budget', async () => {
+    server.state.models = ['gpt-oss:20b'];
+
+    const { context, page } = await openApp(browser, port);
+
+    try {
+        await page.evaluate(() => {
+            state.messages = Array.from({ length: 50 }, (_, index) => ({
+                role: index % 2 === 0 ? 'user' : 'assistant',
+                content: `message-${index}`,
+                created_at: new Date().toISOString()
+            }));
+        });
+
+        await sendMessage(page, 'latest question');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('from the mock.'),
+            null,
+            { timeout: 10000 }
+        );
+
+        const request = server.state.requests.at(-1);
+        assert.equal(request.messages.length, 41, '40 context messages plus the new prompt');
+        assert.equal(request.messages[0].content, 'message-10');
+        assert.equal(request.messages[40].content, 'latest question');
+        assert.equal(
+            request.messages.some((message) => message.content === 'message-0'),
+            false,
+            'the oldest messages should be dropped'
+        );
+    } finally {
+        await context.close();
+    }
+});
+
 test('remote network failures explain the cloud CORS limitation', async () => {
     server.state.models = ['local-model:latest'];
 

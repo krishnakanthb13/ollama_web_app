@@ -64,6 +64,14 @@ The grouping is presentation-only: it does not change which endpoint or model
 name is sent in a request. Free-tier usage still draws from the account's free
 credits, and any other cloud model requires credits or a paid plan.
 
+### Conversation context
+
+Only the newest messages are sent as context, capped at 40 messages or roughly
+24,000 characters, whichever limit is reached first. The latest message is
+always included even if it alone exceeds the character budget. This keeps long
+conversations from producing oversized requests while preserving the most
+relevant recent turns.
+
 ## Core Modules & Functions (`js/app.js`)
 
 | Module / Class | Function | Description |
@@ -84,6 +92,7 @@ credits, and any other cloud model requires credits or a paid plan.
 | | `renderModelList()` | Renders local, free cloud and paid cloud model sections with counts, applying the search filter and sort order within each section. |
 | | `appendMessageToUI()` | Adds a new message bubble to the chat window (supports Markdown). |
 | **Utilities** | `escapeHtml()` | Escapes all untrusted values before HTML interpolation. |
+| | `buildConversationContext()` | Keeps the newest chat turns within the 40-message / 24,000-character context budget. |
 | | `createNdjsonParser()` | Buffers split stream lines, flushes the final line, and reports `done`/`error` payloads. |
 | | `parseStoredArray()` / `normalizeChoice()` | Validate persisted arrays and enum-like settings before they reach app state. |
 | | `safeStorageGet()` | Reads localStorage without throwing when storage is blocked. |

@@ -14,6 +14,7 @@ const {
     normalizeChoice,
     normalizeSidebarWidth,
     uniqueStrings,
+    buildConversationContext,
     normalizeCloudModelName,
     isFreeCloudModel,
     mergeCloudModels,
@@ -270,6 +271,57 @@ test('splitCloudModelsByPlan treats everything as paid without a free list', () 
 
     assert.deepEqual(free, []);
     assert.deepEqual(paid, ['gemma4:31b', 'glm-4.7:cloud']);
+});
+
+test('buildConversationContext keeps the newest messages within the limit', () => {
+    const messages = Array.from({ length: 50 }, (_, index) => ({
+        role: index % 2 === 0 ? 'user' : 'assistant',
+        content: `message-${index}`
+    }));
+
+    const context = buildConversationContext(messages);
+
+    assert.equal(context.length, 40);
+    assert.equal(context[0].content, 'message-10');
+    assert.equal(context.at(-1).content, 'message-49');
+    assert.deepEqual(Object.keys(context[0]), ['role', 'content']);
+});
+
+test('buildConversationContext stops when the character budget is reached', () => {
+    const context = buildConversationContext([
+        { role: 'user', content: '12345' },
+        { role: 'assistant', content: 'abcdef' },
+        { role: 'user', content: 'xy' }
+    ], { maxChars: 10 });
+
+    assert.deepEqual(context, [
+        { role: 'assistant', content: 'abcdef' },
+        { role: 'user', content: 'xy' }
+    ]);
+});
+
+test('buildConversationContext always keeps the latest oversized message', () => {
+    const context = buildConversationContext([
+        { role: 'user', content: 'short' },
+        { role: 'user', content: 'a much longer final question' }
+    ], { maxChars: 5 });
+
+    assert.deepEqual(context, [
+        { role: 'user', content: 'a much longer final question' }
+    ]);
+});
+
+test('buildConversationContext ignores empty and malformed messages', () => {
+    const context = buildConversationContext([
+        { role: 'assistant', content: '   ' },
+        { role: 'tool', content: 'ignored' },
+        { role: 'user', content: '' },
+        null,
+        { role: 'user', content: 'kept' }
+    ], { maxMessages: 5 });
+
+    assert.deepEqual(context, [{ role: 'user', content: 'kept' }]);
+    assert.deepEqual(buildConversationContext('not-an-array'), []);
 });
 
 test('safeStorageGet reads values and survives unavailable storage', () => {

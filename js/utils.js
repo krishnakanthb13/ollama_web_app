@@ -290,6 +290,49 @@
     }
 
     /**
+     * Build the message history sent to Ollama, keeping the newest messages
+     * within a message and character budget. The latest message is always kept
+     * even when it alone exceeds the character limit.
+     *
+     * @param {unknown} messages
+     * @param {{ maxMessages?: number, maxChars?: number }} [options]
+     * @returns {Array<{ role: string, content: string }>}
+     */
+    function buildConversationContext(messages, options = {}) {
+        const maxMessages = Number.isFinite(options.maxMessages) && options.maxMessages > 0
+            ? Math.floor(options.maxMessages)
+            : 40;
+        const maxChars = Number.isFinite(options.maxChars) && options.maxChars > 0
+            ? Math.floor(options.maxChars)
+            : 24000;
+
+        if (!Array.isArray(messages)) return [];
+
+        const usable = messages.filter((message) => {
+            if (!message || typeof message.content !== 'string' || message.content.length === 0) {
+                return false;
+            }
+            if (!['user', 'assistant', 'system'].includes(message.role)) return false;
+            return message.role !== 'assistant' || message.content.trim().length > 0;
+        });
+
+        const context = [];
+        let characters = 0;
+
+        for (let i = usable.length - 1; i >= 0; i -= 1) {
+            if (context.length >= maxMessages) break;
+
+            const message = usable[i];
+            if (context.length > 0 && characters + message.content.length > maxChars) break;
+
+            context.unshift({ role: message.role, content: message.content });
+            characters += message.content.length;
+        }
+
+        return context;
+    }
+
+    /**
      * Whether a model name is in the free cloud tier. Matching ignores a
      * trailing `-cloud`/`:cloud` alias and is case-insensitive.
      *
@@ -454,6 +497,7 @@
         normalizeChoice,
         normalizeSidebarWidth,
         uniqueStrings,
+        buildConversationContext,
         normalizeCloudModelName,
         isFreeCloudModel,
         mergeCloudModels,
