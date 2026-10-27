@@ -20,7 +20,9 @@ async function openApp(browser, port, storage = {}, viewport = { width: 1280, he
     });
     const page = await context.newPage();
     const pageErrors = [];
+    const requests = [];
     page.on('pageerror', (error) => pageErrors.push(error));
+    page.on('request', (request) => requests.push(request.url()));
 
     await page.addInitScript(({ port, storage }) => {
         localStorage.setItem('localUrl', `http://127.0.0.1:${port}`);
@@ -39,7 +41,7 @@ async function openApp(browser, port, storage = {}, viewport = { width: 1280, he
         { timeout: 10000 }
     );
 
-    return { context, page, pageErrors };
+    return { context, page, pageErrors, requests };
 }
 
 async function sendMessage(page, text) {

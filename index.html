@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; font-src 'self'; connect-src http: https:; object-src 'none'; base-uri 'none'; form-action 'self'">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Ollama Web App</title>
     <link rel="icon" href="assets/ollama.png">
@@ -13,9 +14,9 @@
     <meta name="apple-mobile-web-app-title" content="Ollama">
     <link rel="stylesheet" href="css/styles.css">
 
-    <!-- Independent Libraries (CDN fallback, could be local) -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+    <!-- Vendored libraries: no CDN, so the app works offline and under the CSP. -->
+    <script src="vendor/marked.umd.js?v=18.1.2"></script>
+    <script src="vendor/purify.min.js?v=3.4.17"></script>
 </head>
 
 <body>

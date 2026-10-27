@@ -1,10 +1,12 @@
-const CACHE_NAME = 'ollama-pwa-v19';
+const CACHE_NAME = 'ollama-pwa-v20';
 const ASSETS = [
     './',
     './index.html',
     './css/styles.css',
     './js/utils.js',
     './js/app.js',
+    './vendor/marked.umd.js?v=18.1.2',
+    './vendor/purify.min.js?v=3.4.17',
     './assets/ollama.png'
 ];
 

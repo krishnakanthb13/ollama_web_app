@@ -64,6 +64,60 @@ test('chat titles are rendered as text, not HTML', async () => {
     }
 });
 
+test('markdown libraries are vendored locally and constrained by CSP', async () => {
+    server.state.models = ['gpt-oss:20b'];
+
+    const { context, page, requests } = await openApp(browser, port);
+
+    try {
+        assert.equal(await page.evaluate(() => typeof window.marked?.parse), 'function');
+        assert.equal(await page.evaluate(() => typeof window.DOMPurify?.sanitize), 'function');
+
+        const externalRequests = requests.filter((url) => {
+            if (!/^https?:/i.test(url)) return false;
+            const { hostname } = new URL(url);
+            return hostname !== '127.0.0.1' && hostname !== 'localhost';
+        });
+        assert.deepEqual(externalRequests, [], 'no CDN or third-party requests');
+
+        assert.ok(
+            requests.some((url) => url.includes('/vendor/marked.umd.js')),
+            'marked should load from the app'
+        );
+        assert.ok(
+            requests.some((url) => url.includes('/vendor/purify.min.js')),
+            'DOMPurify should load from the app'
+        );
+
+        const csp = await page.getAttribute(
+            'meta[http-equiv="Content-Security-Policy"]',
+            'content'
+        );
+        assert.ok(csp, 'a CSP meta tag should be present');
+        assert.ok(csp.includes("script-src 'self'"), 'scripts should be same-origin');
+
+        // Rendered markdown keeps formatting but drops event handlers.
+        const rendered = await page.evaluate(() => {
+            const html = DOMPurify.sanitize(
+                marked.parse('**bold** <img src=x onerror="window.__xss = 1">')
+            );
+            const host = document.createElement('div');
+            host.innerHTML = html;
+            document.body.appendChild(host);
+            return {
+                bold: Boolean(host.querySelector('strong')),
+                hasOnerror: html.includes('onerror'),
+                xss: window.__xss === 1
+            };
+        });
+        assert.equal(rendered.bold, true);
+        assert.equal(rendered.hasOnerror, false);
+        assert.equal(rendered.xss, false);
+    } finally {
+        await context.close();
+    }
+});
+
 test('scrollToBottom moves the chat scroller to the latest content', async () => {
     server.state.models = ['good-model:latest-cloud'];
     const { context, page } = await openApp(browser, port);

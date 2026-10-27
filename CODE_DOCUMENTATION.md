@@ -2,12 +2,13 @@
 
 ## Project Structure
 
-- `index.html`: The main entry point for the application. It bundles the UI structure and loads external dependencies via CDN.
+- `index.html`: The main entry point for the application. It bundles the UI structure, declares the Content-Security-Policy and loads the vendored Markdown libraries.
 - `css/`: Contains the styling for the application.
   - `styles.css`: The primary stylesheet containing CSS variables, dark mode themes, component styles, and responsiveness logic.
 - `js/`: Contains the application logic.
   - `app.js`: The monolithic JavaScript file handling state, IndexedDB interactions, UI rendering, event listeners, and API calls to Ollama.
   - `utils.js`: Dependency-free shared helpers (HTML escaping, storage parsing, NDJSON parsing, URL normalisation). Loaded before `app.js` and also consumable by the Node test suite.
+- `vendor/`: Locally hosted third-party libraries and their license texts (see `THIRD_PARTY_NOTICES.md`).
 - `tests/`: Node-based unit tests (`node:test`) and headless-browser tests (Playwright Core against the installed Chrome channel), including a mock Ollama server.
 - `sw.js`: The Service Worker file responsible for caching assets (HTML, CSS, JS, Images) to enable PWAs to work offline.
 - `manifest.json`: Metadata for the Progressive Web App (PWA) installation.
@@ -128,9 +129,21 @@ so private browsing or a full quota cannot break chat.
 - **Runtime**:
   - A modern web browser (Chrome, Edge, Firefox).
   - [Ollama](https://ollama.com/) running locally (default: `http://localhost:11434`) or cloud access.
-- **Libraries (CDN)**:
-  - `marked.min.js`: For parsing Markdown in chat messages.
-  - `purify.min.js`: For sanitizing HTML to prevent XSS.
+- **Libraries (vendored)**:
+  - `vendor/marked.umd.js` (18.1.2): For parsing Markdown in chat messages.
+  - `vendor/purify.min.js` (3.4.17): For sanitizing rendered HTML to prevent XSS.
+  - No CDN is used at runtime, so the app loads offline and under its CSP. See
+    `THIRD_PARTY_NOTICES.md` and the license files in `vendor/`.
+
+## Content-Security-Policy
+
+`index.html` sets a CSP in a `<meta http-equiv>` tag. Scripts and styles are
+restricted to the app's own origin; `'unsafe-inline'` remains for the existing
+inline event handlers and `style` attributes. Connections may target any
+`http:`/`https:` origin because the Ollama endpoint is user-configured, while
+images allow `data:`, `blob:` and remote URLs used in Markdown. Objects and base
+URL overrides are blocked. Because the policy is declared in HTML rather than an
+HTTP header, it also protects the app when served by any static file server.
 - **Development**:
   - `http-server`: Simple static server for local testing.
 

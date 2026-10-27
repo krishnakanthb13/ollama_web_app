@@ -53,7 +53,8 @@ OLLAMA_ORIGINS="*" ollama serve
 ```
 
 ## Dependencies
-This project uses the following libraries via CDN:
+This project uses the following libraries, vendored locally in `vendor/` so the
+app works offline (see `THIRD_PARTY_NOTICES.md`):
 - [Marked](https://github.com/markedjs/marked) (Markdown parsing)
 - [DOMPurify](https://github.com/cure53/DOMPurify) (Security sanitization)
 
