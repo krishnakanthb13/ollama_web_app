@@ -16,6 +16,7 @@ const {
     uniqueStrings,
     normalizeCloudModelName,
     isFreeCloudModel,
+    mergeCloudModels,
     splitCloudModelsByPlan,
     normalizeEndpointUrl,
     isLoopbackEndpoint,
@@ -220,6 +221,25 @@ test('isFreeCloudModel matches API names and cloud aliases', () => {
     assert.equal(isFreeCloudModel('glm-4.7:cloud', freeModels), false);
     assert.equal(isFreeCloudModel('', freeModels), false);
     assert.equal(isFreeCloudModel(null, freeModels), false);
+});
+
+test('mergeCloudModels adds new models without duplicating aliases', () => {
+    assert.deepEqual(
+        mergeCloudModels(
+            ['gpt-oss:20b-cloud', 'glm-4.7:cloud'],
+            ['gpt-oss:20b', 'gemma4:31b', 'gemma4:31b-cloud', 'beam']
+        ),
+        ['gpt-oss:20b-cloud', 'glm-4.7:cloud', 'gemma4:31b', 'beam']
+    );
+});
+
+test('mergeCloudModels tolerates bad input and does not mutate its inputs', () => {
+    const existing = ['glm-4.7:cloud'];
+    const additions = ['beam', null, 42];
+
+    assert.deepEqual(mergeCloudModels(existing, additions), ['glm-4.7:cloud', 'beam']);
+    assert.deepEqual(existing, ['glm-4.7:cloud']);
+    assert.deepEqual(mergeCloudModels(null, null), []);
 });
 
 test('splitCloudModelsByPlan separates free models and accepts alias suffixes', () => {

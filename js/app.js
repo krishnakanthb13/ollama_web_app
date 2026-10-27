@@ -11,8 +11,10 @@ const {
     normalizeSidebarWidth,
     uniqueStrings,
     isFreeCloudModel,
+    mergeCloudModels,
     splitCloudModelsByPlan,
     normalizeEndpointUrl,
+    isLoopbackEndpoint,
     canSendApiKey,
     describeFetchFailure
 } = window.AppUtils;
@@ -213,6 +215,35 @@ const DEFAULT_CLOUD_MODELS = [
     "qwen3-vl:235b-cloud"
 ];
 
+// Bump when the default cloud catalogue changes so existing installs merge
+// newly introduced free models once instead of silently keeping stale storage.
+const CLOUD_CATALOG_VERSION = '1';
+
+function loadStoredCloudModels() {
+    const stored = uniqueStrings(
+        parseStoredArray(safeStorageGet('cloudModels'), DEFAULT_CLOUD_MODELS)
+    );
+
+    if (safeStorageGet('cloudCatalogVersion') === CLOUD_CATALOG_VERSION) {
+        return stored;
+    }
+
+    // Keep an explicitly emptied list empty, but backfill free-tier models for
+    // existing catalogues. `mergeCloudModels` avoids duplicate `-cloud` aliases.
+    const migrated = stored.length > 0
+        ? mergeCloudModels(stored, FREE_CLOUD_MODELS)
+        : stored;
+
+    try {
+        localStorage.setItem('cloudModels', JSON.stringify(migrated));
+        localStorage.setItem('cloudCatalogVersion', CLOUD_CATALOG_VERSION);
+    } catch (error) {
+        // Storage is best-effort; the in-memory list still works for this session.
+    }
+
+    return migrated;
+}
+
 // --- State ---
 const state = {
     currentChatId: null,
@@ -230,7 +261,7 @@ const state = {
     // Models
     localModels: [],
     hiddenModels: uniqueStrings(parseStoredArray(safeStorageGet('hiddenModels'), [])),
-    cloudModels: uniqueStrings(parseStoredArray(safeStorageGet('cloudModels'), DEFAULT_CLOUD_MODELS)),
+    cloudModels: loadStoredCloudModels(),
     modelSearchQuery: '',
 
     // Settings / Toggles
@@ -532,6 +563,47 @@ async function loadModels() {
 
     validateCurrentModel();
     renderModelList();
+
+    // Refresh the cloud catalogue in the background when it can be reached.
+    // Direct ollama.com requests are CORS-blocked, so this is useful with a
+    // proxy or a remote Ollama gateway; failure keeps the cached list.
+    refreshCloudModels();
+}
+
+async function refreshCloudModels() {
+    if (!state.cloudUrl || isLoopbackEndpoint(state.cloudUrl)) return;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+
+    try {
+        const headers = {};
+        if (state.cloudApiKey && canSendApiKey(state.cloudUrl)) {
+            headers.Authorization = `Bearer ${state.cloudApiKey}`;
+        }
+
+        const response = await fetch(`${state.cloudUrl}/tags`, {
+            headers,
+            signal: controller.signal
+        });
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const names = uniqueStrings((data.models || []).map((model) => model?.name));
+        if (names.length === 0) return;
+
+        const merged = mergeCloudModels(state.cloudModels, names);
+        if (merged.length === state.cloudModels.length) return;
+
+        state.cloudModels = merged;
+        localStorage.setItem('cloudModels', JSON.stringify(state.cloudModels));
+        validateCurrentModel();
+        renderModelList();
+    } catch (error) {
+        // Unreachable or CORS-blocked: the persisted list is the cache.
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 function validateCurrentModel() {

@@ -378,6 +378,7 @@ test('local models are listed without suffix filtering and duplicates are remove
 
     const { context, page } = await openApp(browser, port, {
         cloudModels: JSON.stringify(['llama3.1:8b', 'remote-only:cloud', 'remote-only:cloud']),
+        cloudCatalogVersion: '1',
         lastModel: 'removed-model:latest'
     });
 
@@ -423,7 +424,8 @@ test('cloud models are split into free and paid sections', async () => {
             'gemma4:31b',
             'nemotron-3-super',
             'minimax-m2.1:cloud'
-        ])
+        ]),
+        cloudCatalogVersion: '1'
     });
 
     const readSections = () => page.$eval('#model-list', (list) => {
@@ -484,11 +486,85 @@ test('cloud models are split into free and paid sections', async () => {
     }
 });
 
+test('existing cloud lists are backfilled with free models once', async () => {
+    server.state.models = [];
+
+    const { context, page } = await openApp(browser, port, {
+        cloudModels: JSON.stringify(['gpt-oss:20b-cloud', 'glm-4.7:cloud'])
+    });
+
+    try {
+        const models = await page.evaluate(() => state.cloudModels);
+        for (const name of ['beam', 'gemma4:31b', 'nemotron-3-super', 'nemotron-3-ultra']) {
+            assert.ok(models.includes(name), `${name} should be backfilled`);
+        }
+        assert.equal(
+            models.includes('gpt-oss:20b'),
+            false,
+            'the existing -cloud alias must not be duplicated'
+        );
+        assert.equal(
+            await page.evaluate(() => localStorage.getItem('cloudCatalogVersion')),
+            '1'
+        );
+
+        // A second load must respect a model the user removed after migration.
+        await page.evaluate(() => {
+            state.cloudModels = state.cloudModels.filter((name) => name !== 'beam');
+            localStorage.setItem('cloudModels', JSON.stringify(state.cloudModels));
+        });
+        await page.reload();
+        await page.waitForFunction(
+            () => document.querySelectorAll('#model-list .model-option').length > 0
+        );
+
+        const reloaded = await page.evaluate(() => state.cloudModels);
+        assert.equal(reloaded.includes('beam'), false, 'migration should run only once');
+    } finally {
+        await context.close();
+    }
+});
+
+test('a reachable cloud catalogue refreshes the cached model list', async () => {
+    server.state.models = [];
+
+    const { context, page } = await openApp(browser, port, {
+        cloudUrl: 'https://cloud.example.test/api',
+        cloudModels: JSON.stringify(['glm-4.7:cloud']),
+        cloudCatalogVersion: '1'
+    });
+
+    try {
+        await page.route('https://cloud.example.test/api/tags', (route) => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            headers: { 'Access-Control-Allow-Origin': '*' },
+            body: JSON.stringify({
+                models: [{ name: 'gemma4:31b' }, { name: 'deepseek-v4-pro:0813' }]
+            })
+        }));
+
+        await page.evaluate(() => refreshCloudModels());
+        await page.waitForFunction(() => state.cloudModels.includes('deepseek-v4-pro:0813'));
+
+        const models = await page.evaluate(() => state.cloudModels);
+        assert.ok(models.includes('gemma4:31b'));
+        assert.deepEqual(
+            await page.evaluate(() => JSON.parse(localStorage.getItem('cloudModels'))),
+            models,
+            'the refreshed catalogue should be cached'
+        );
+    } finally {
+        await context.close();
+    }
+});
+
 test('the empty state explains the selected cloud model plan', async () => {
     server.state.models = [];
 
     const { context, page } = await openApp(browser, port, {
         cloudModels: JSON.stringify(['gemma4:31b', 'glm-4.7:cloud']),
+        cloudCatalogVersion: '1',
         lastModel: 'gemma4:31b'
     });
 

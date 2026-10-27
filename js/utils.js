@@ -306,6 +306,29 @@
     }
 
     /**
+     * Merge cloud model lists without duplicating the same model under its API
+     * name and CLI alias (`gemma4:31b` vs `gemma4:31b-cloud`). Existing entries
+     * win so a user's chosen spelling is preserved.
+     *
+     * @param {unknown} models
+     * @param {unknown} additions
+     * @returns {string[]}
+     */
+    function mergeCloudModels(models, additions) {
+        const result = uniqueStrings(models);
+        const seen = new Set(result.map(normalizeCloudModelName).filter(Boolean));
+
+        for (const name of uniqueStrings(additions)) {
+            const normalized = normalizeCloudModelName(name);
+            if (!normalized || seen.has(normalized)) continue;
+            seen.add(normalized);
+            result.push(name);
+        }
+
+        return result;
+    }
+
+    /**
      * Split cloud models into free-tier and paid lists. The relative order of
      * each list follows the input so callers can decide how to sort.
      *
@@ -433,6 +456,7 @@
         uniqueStrings,
         normalizeCloudModelName,
         isFreeCloudModel,
+        mergeCloudModels,
         splitCloudModelsByPlan,
         normalizeEndpointUrl,
         isLoopbackEndpoint,

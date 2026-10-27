@@ -51,6 +51,15 @@ placeholder repeats the selected cloud model's plan: free-tier models are marked
 as using free usage credits, while all other cloud models point to the paid plan
 or usage credits and link to the usage settings.
 
+The cloud list is also the catalogue cache. Existing installs are backfilled
+once with any newly introduced free models (`cloudCatalogVersion` records that
+migration), without duplicating CLI aliases such as `gpt-oss:20b-cloud`. At
+startup the app also tries `GET {cloudUrl}/tags` in the background when the
+cloud endpoint is not loopback, merging any returned model names into the cached
+list. Direct requests to `ollama.com` remain CORS-blocked, so this refresh is
+useful behind a proxy or a reachable Ollama gateway; failures silently keep the
+stored list.
+
 The grouping is presentation-only: it does not change which endpoint or model
 name is sent in a request. Free-tier usage still draws from the account's free
 credits, and any other cloud model requires credits or a paid plan.
@@ -67,6 +76,7 @@ credits, and any other cloud model requires credits or a paid plan.
 | | `updateHeaderControlsUI()` | Shows only the controls the selected model supports and keeps the quality label in sync. |
 | **Capabilities** | `getModelCapabilities()` | Detects thinking, tools and size support from the model name. |
 | **Initialization** | `init()` | Bootstraps the app: binds DOM, loads models, restores settings. |
+| | `loadStoredCloudModels()` / `refreshCloudModels()` | Backfills the free-tier catalogue once and refreshes the cached cloud list from a reachable `/tags` endpoint. |
 | **Chat Logic** | `sendMessage()` | Handles user input, updates UI, calls Ollama API, streams the response, and persists a partial answer when a request is stopped or interrupted. |
 | | `stopGeneration()` | Cancels the active request; the partial answer is saved with an `interrupted` status. |
 | **Rendering** | `renderChatList()` | Renders the sidebar list of conversation history. |
@@ -78,6 +88,7 @@ credits, and any other cloud model requires credits or a paid plan.
 | | `parseStoredArray()` / `normalizeChoice()` | Validate persisted arrays and enum-like settings before they reach app state. |
 | | `safeStorageGet()` | Reads localStorage without throwing when storage is blocked. |
 | | `splitCloudModelsByPlan()` / `normalizeCloudModelName()` / `isFreeCloudModel()` | Split cloud models into free and paid lists, matching API names and `-cloud`/`:cloud` aliases. |
+| | `mergeCloudModels()` | Merges catalogue additions without duplicating the same model under an API name and CLI alias. |
 | | `normalizeEndpointUrl()` / `canSendApiKey()` | Validates endpoint URLs and blocks API keys on insecure remote connections. |
 | | `describeFetchFailure()` | Adds local Ollama or cloud CORS guidance to network failures. |
 | **Settings** | `openSettings()` | Toggles the settings panel. |
