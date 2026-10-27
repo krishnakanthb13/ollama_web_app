@@ -1,8 +1,9 @@
-const CACHE_NAME = 'ollama-pwa-v5';
+const CACHE_NAME = 'ollama-pwa-v6';
 const ASSETS = [
     './',
     './index.html',
     './css/styles.css',
+    './js/utils.js',
     './js/app.js',
     './assets/ollama.png'
 ];

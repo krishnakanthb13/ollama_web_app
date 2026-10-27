@@ -7,6 +7,8 @@
   - `styles.css`: The primary stylesheet containing CSS variables, dark mode themes, component styles, and responsiveness logic.
 - `js/`: Contains the application logic.
   - `app.js`: The monolithic JavaScript file handling state, IndexedDB interactions, UI rendering, event listeners, and API calls to Ollama.
+  - `utils.js`: Dependency-free shared helpers (HTML escaping, storage parsing, NDJSON parsing, URL normalisation). Loaded before `app.js` and also consumable by the Node test suite.
+- `tests/`: Node-based unit tests (`node:test`) and headless-browser tests (Playwright Core against the installed Chrome channel), including a mock Ollama server.
 - `sw.js`: The Service Worker file responsible for caching assets (HTML, CSS, JS, Images) to enable PWAs to work offline.
 - `manifest.json`: Metadata for the Progressive Web App (PWA) installation.
 - `run_app.bat` / `run_app.sh`: Scripts to launch a local development server for the application.
@@ -32,6 +34,7 @@ The Ollama Web App follows a **client-side only** architecture (Single Page Appl
 | **Chat Logic** | `sendMessage()` | Handles user input, updates UI, calls Ollama API, and streams response. |
 | **Rendering** | `renderChatList()` | Renders the sidebar list of conversation history. |
 | | `appendMessageToUI()` | Adds a new message bubble to the chat window (supports Markdown). |
+| **Utilities** | `escapeHtml()` | Escapes all untrusted values before HTML interpolation. |
 | **Settings** | `openSettings()` | Toggles the settings panel. |
 | | `toggleCloudList()` | Expands/collapses the cloud model configuration section. |
 
@@ -62,3 +65,15 @@ The Ollama Web App follows a **client-side only** architecture (Single Page Appl
 5.  App sends JSON payload to Ollama `/api/chat`.
 6.  Ollama returns a stream of JSON objects.
 7.  App parses chunks and updates the DOM in real-time.
+
+## Testing
+
+```bash
+npm test          # unit + browser tests
+npm run test:unit # node:test helpers only
+npm run test:e2e  # headless Chrome against tests/mock-server.js
+```
+
+The browser tests use `playwright-core` with the locally installed Chrome
+(`channel: "chrome"`), so no browser download is required. Set
+`CHROME_CHANNEL=msedge` to run them with Edge instead.

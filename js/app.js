@@ -1,4 +1,5 @@
 // --- DB Logic (Inlined for compatibility) ---
+const { escapeHtml } = window.AppUtils;
 const DB_NAME = 'OllamaWebApp';
 const DB_VERSION = 1;
 
@@ -538,10 +539,11 @@ function renderModelList() {
 
         const caps = getModelCapabilities(name);
         const icons = caps.length > 0 ? caps.map(c => c.icon).join(' ') : (type === 'Local' ? '💻' : '☁️');
+        const safeName = escapeHtml(name);
 
         div.innerHTML = `
             <div class="model-info" style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; width: 100%; gap: 12px;">
-                <span class="model-name" style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${name}</span>
+                <span class="model-name" style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${safeName}</span>
                 <span class="model-icon" style="font-size: 0.9rem; opacity: 0.8; flex-shrink: 0;">${icons}</span>
             </div>
             ${name === state.currentModel ? '<span class="check-icon" style="color:var(--accent); margin-left: 8px;">✓</span>' : ''}
@@ -627,8 +629,8 @@ function renderChatList() {
     list.innerHTML = state.chats.map(chat => `
         <div class="chat-item ${chat.id === state.currentChatId ? 'active' : ''}" onclick="loadChat(${chat.id})">
             <div class="chat-item-content">
-                <div class="chat-item-title">${chat.title}</div>
-                <div class="chat-item-date">${chat.model ? chat.model + ' • ' : ''}${new Date(chat.updated_at).toLocaleDateString()}</div>
+                <div class="chat-item-title">${escapeHtml(chat.title || 'Untitled chat')}</div>
+                <div class="chat-item-date">${chat.model ? escapeHtml(chat.model) + ' • ' : ''}${new Date(chat.updated_at).toLocaleDateString()}</div>
             </div>
             <div style="display:flex; opacity:0; transition: opacity 0.2s;" class="chat-actions">
                 <button class="download-chat-btn" onclick="exportChatToMarkdown(event, ${chat.id})" title="Download as Markdown">
@@ -712,7 +714,7 @@ function renderMessages() {
     if (state.messages.length === 0) {
         dom.messagesArea.innerHTML = `
             <div class="message assistant-msg" style="opacity: 0.5; text-align: center; margin-top: 2rem;">
-                 <div class="message-content">Start a conversation using ${state.currentModel || 'Ollama'}</div>
+                 <div class="message-content">Start a conversation using ${escapeHtml(state.currentModel || 'Ollama')}</div>
             </div>`;
         return;
     }
@@ -924,7 +926,7 @@ async function sendMessage() {
         msgDiv.appendChild(metaRow); // Append below content block
 
     } catch (e) {
-        contentBlock.innerHTML += `<div style="color:var(--error); margin-top:10px;">Error: ${e.message}</div>`;
+        contentBlock.innerHTML += `<div style="color:var(--error); margin-top:10px;">Error: ${escapeHtml(e.message)}</div>`;
         if (e.message.includes('Failed to fetch') && url.includes('localhost')) {
             contentBlock.innerHTML += `<br><small>Hint: Ensure Ollama is running with <code>OLLAMA_ORIGINS="*"</code> environment variable.</small>`;
         }
@@ -990,7 +992,7 @@ function renderLocalModelEditor() {
         div.style.justifyContent = 'space-between';
 
         div.innerHTML = `
-            <span style="opacity: ${isHidden ? 0.5 : 1}; text-decoration: ${isHidden ? 'line-through' : 'none'}">${modelName}</span>
+            <span style="opacity: ${isHidden ? 0.5 : 1}; text-decoration: ${isHidden ? 'line-through' : 'none'}">${escapeHtml(modelName)}</span>
             <button class="text-link-btn" style="color: ${isHidden ? 'var(--text-secondary)' : 'var(--success)'}; font-size:0.8rem;">
                 ${isHidden ? 'Enable' : 'Disable'}
             </button>
@@ -1035,7 +1037,7 @@ function renderCloudModelEditor() {
         const div = document.createElement('div');
         div.className = 'model-list-item';
         div.innerHTML = `
-            <span>${modelName}</span>
+            <span>${escapeHtml(modelName)}</span>
             <button class="remove-model-btn" title="Remove model">✕</button>
         `;
         div.querySelector('button').onclick = (e) => {
