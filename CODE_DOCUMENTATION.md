@@ -34,6 +34,20 @@ Endpoint URLs are validated as `http(s)` and trailing slashes are removed. API
 keys are attached only to cloud requests, and only over HTTPS or a loopback
 address. Insecure remote endpoints are refused rather than leaking the key.
 
+### Model selection
+
+The model selector keeps local models separate from cloud models. Cloud models
+are further split into `FREE CLOUD MODELS` and `PAID CLOUD MODELS` using the
+`FREE_CLOUD_MODELS` list, which mirrors the seven free-tier models shown under
+usage settings on [ollama.com/settings](https://ollama.com/settings). Plan
+matching accepts both API names (`gemma4:31b`) and CLI aliases
+(`gemma4:31b-cloud`). Sorting (Default or A-Z) applies inside each section so
+the local/free/paid boundary stays visible.
+
+The grouping is presentation-only: it does not change which endpoint or model
+name is sent in a request. Free-tier usage still draws from the account's free
+credits, and any other cloud model requires credits or a paid plan.
+
 ## Core Modules & Functions (`js/app.js`)
 
 | Module / Class | Function | Description |
@@ -49,11 +63,13 @@ address. Insecure remote endpoints are refused rather than leaking the key.
 | **Chat Logic** | `sendMessage()` | Handles user input, updates UI, calls Ollama API, streams the response, and persists a partial answer when a request is stopped or interrupted. |
 | | `stopGeneration()` | Cancels the active request; the partial answer is saved with an `interrupted` status. |
 | **Rendering** | `renderChatList()` | Renders the sidebar list of conversation history. |
+| | `renderModelList()` | Renders local, free cloud and paid cloud model sections, applying the search filter and sort order within each section. |
 | | `appendMessageToUI()` | Adds a new message bubble to the chat window (supports Markdown). |
 | **Utilities** | `escapeHtml()` | Escapes all untrusted values before HTML interpolation. |
 | | `createNdjsonParser()` | Buffers split stream lines, flushes the final line, and reports `done`/`error` payloads. |
 | | `parseStoredArray()` / `normalizeChoice()` | Validate persisted arrays and enum-like settings before they reach app state. |
 | | `safeStorageGet()` | Reads localStorage without throwing when storage is blocked. |
+| | `splitCloudModelsByPlan()` / `normalizeCloudModelName()` | Splits cloud models into free and paid lists, matching API names and `-cloud`/`:cloud` aliases. |
 | | `normalizeEndpointUrl()` / `canSendApiKey()` | Validates endpoint URLs and blocks API keys on insecure remote connections. |
 | | `describeFetchFailure()` | Adds local Ollama or cloud CORS guidance to network failures. |
 | **Settings** | `openSettings()` | Toggles the settings panel. |

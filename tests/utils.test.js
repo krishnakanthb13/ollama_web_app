@@ -14,6 +14,8 @@ const {
     normalizeChoice,
     normalizeSidebarWidth,
     uniqueStrings,
+    normalizeCloudModelName,
+    splitCloudModelsByPlan,
     normalizeEndpointUrl,
     isLoopbackEndpoint,
     canSendApiKey,
@@ -197,6 +199,45 @@ test('uniqueStrings trims, filters and deduplicates while preserving order', () 
     );
     assert.deepEqual(uniqueStrings('not-an-array'), []);
     assert.deepEqual(uniqueStrings(null), []);
+});
+
+test('normalizeCloudModelName folds API names and cloud aliases', () => {
+    assert.equal(normalizeCloudModelName('gemma4:31b'), 'gemma4:31b');
+    assert.equal(normalizeCloudModelName('  gemma4:31b-cloud '), 'gemma4:31b');
+    assert.equal(normalizeCloudModelName('gpt-oss:20b:cloud'), 'gpt-oss:20b');
+    assert.equal(normalizeCloudModelName('GPT-OSS:20B-CLOUD'), 'gpt-oss:20b');
+    assert.equal(normalizeCloudModelName(null), '');
+    assert.equal(normalizeCloudModelName(42), '');
+});
+
+test('splitCloudModelsByPlan separates free models and accepts alias suffixes', () => {
+    const { free, paid } = splitCloudModelsByPlan(
+        [
+            'gpt-oss:20b-cloud',
+            'glm-4.7:cloud',
+            'gemma4:31b',
+            'nemotron-3-nano:30b',
+            'beam',
+            'gemma4:31b',
+            '   '
+        ],
+        ['beam', 'gemma4:31b', 'gpt-oss:20b', 'nemotron-3-nano:30b']
+    );
+
+    assert.deepEqual(free, [
+        'gpt-oss:20b-cloud',
+        'gemma4:31b',
+        'nemotron-3-nano:30b',
+        'beam'
+    ]);
+    assert.deepEqual(paid, ['glm-4.7:cloud']);
+});
+
+test('splitCloudModelsByPlan treats everything as paid without a free list', () => {
+    const { free, paid } = splitCloudModelsByPlan(['gemma4:31b', 'glm-4.7:cloud'], null);
+
+    assert.deepEqual(free, []);
+    assert.deepEqual(paid, ['gemma4:31b', 'glm-4.7:cloud']);
 });
 
 test('safeStorageGet reads values and survives unavailable storage', () => {

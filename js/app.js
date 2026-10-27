@@ -10,6 +10,7 @@ const {
     normalizeChoice,
     normalizeSidebarWidth,
     uniqueStrings,
+    splitCloudModelsByPlan,
     normalizeEndpointUrl,
     canSendApiKey,
     describeFetchFailure
@@ -181,18 +182,34 @@ const dbApp = new DB();
 // --- Default Configuration ---
 const DEFAULT_LOCAL_URL = 'http://localhost:11434';
 const DEFAULT_CLOUD_URL = 'https://ollama.com/api';
+// Free-tier models as listed in https://ollama.com/settings (usage breakdown).
+// Matching also accepts the CLI-style `-cloud`/`:cloud` aliases.
+const FREE_CLOUD_MODELS = [
+    "beam",
+    "gemma4:31b",
+    "gpt-oss:120b",
+    "gpt-oss:20b",
+    "nemotron-3-nano:30b",
+    "nemotron-3-super",
+    "nemotron-3-ultra"
+];
+
 const DEFAULT_CLOUD_MODELS = [
+    // Free-tier cloud models
+    "beam", "gemma4:31b", "gpt-oss:120b", "gpt-oss:20b",
+    "nemotron-3-nano:30b", "nemotron-3-super", "nemotron-3-ultra",
+    // Paid cloud models
     "glm-4.7:cloud", "minimax-m2.1:cloud", "gemini-3-flash-preview:latest",
-    "gemini-3-flash-preview:cloud", "nemotron-3-nano:30b-cloud",
+    "gemini-3-flash-preview:cloud",
     "gemini-3-pro-preview:latest", "rnj-1:8b-cloud", "devstral-small-2:24b-cloud",
     "devstral-2:123b-cloud", "qwen3-next:80b-cloud", "gemma3:27b-cloud",
     "gemma3:12b-cloud", "gemma3:4b-cloud", "deepseek-v3.2:cloud",
     "mistral-large-3:675b-cloud", "ministral-3:14b-cloud",
     "ministral-3:8b-cloud", "ministral-3:3b-cloud", "cogito-2.1:671b-cloud",
     "qwen3-vl:235b-instruct-cloud", "deepseek-v3.1:671b-cloud",
-    "gpt-oss:20b-cloud", "glm-4.6:cloud", "kimi-k2-thinking:cloud",
+    "glm-4.6:cloud", "kimi-k2-thinking:cloud",
     "minimax-m2:cloud", "qwen3-coder:480b-cloud", "kimi-k2:1t-cloud",
-    "qwen3-vl:235b-cloud", "gpt-oss:120b-cloud"
+    "qwen3-vl:235b-cloud"
 ];
 
 // --- State ---
@@ -584,42 +601,45 @@ function renderModelList() {
     // Exclude hidden models
     allLocal = allLocal.filter(m => !state.hiddenModels.includes(m.name));
 
-    let combined = [...allLocal, ...allCloud];
+    // Paid and free cloud models are shown in separate sections so the plan
+    // boundary is visible. Matching accepts API names and `-cloud` aliases.
+    const cloudPlans = splitCloudModelsByPlan(allCloud.map(m => m.name), FREE_CLOUD_MODELS);
+    const freeCloud = cloudPlans.free.map(name => ({ name, type: 'Cloud' }));
+    const paidCloud = cloudPlans.paid.map(name => ({ name, type: 'Cloud' }));
 
-    if (state.sortOrder === 'az') {
-        combined.sort((a, b) => a.name.localeCompare(b.name));
-        combined.forEach(m => container.appendChild(createItem(m.name, m.type)));
-    } else {
-        if (allLocal.length > 0) {
-            const header = document.createElement('div');
-            header.style.padding = '8px 12px';
-            header.style.fontWeight = 'bold';
-            header.style.fontSize = '0.8rem';
-            header.style.color = 'var(--text-secondary)';
-            header.textContent = 'LOCAL MODELS';
-            container.appendChild(header);
-            allLocal.forEach(m => container.appendChild(createItem(m.name, 'Local')));
-        }
-        if (allCloud.length > 0) {
-            const header = document.createElement('div');
-            header.style.padding = '8px 12px';
-            header.style.marginTop = '8px';
-            header.style.fontWeight = 'bold';
-            header.style.fontSize = '0.8rem';
-            header.style.color = 'var(--text-secondary)';
-            header.textContent = 'CLOUD MODELS';
-            container.appendChild(header);
-            allCloud.forEach(m => container.appendChild(createItem(m.name, 'Cloud')));
-        }
+    const addSection = (title, models, marginTop = false) => {
+        if (models.length === 0) return;
 
-        if (allLocal.length === 0 && allCloud.length === 0) {
-            const noRes = document.createElement('div');
-            noRes.style.padding = '1rem';
-            noRes.style.textAlign = 'center';
-            noRes.style.color = 'var(--text-secondary)';
-            noRes.textContent = 'No models found';
-            container.appendChild(noRes);
-        }
+        const header = document.createElement('div');
+        header.className = 'model-group-header';
+        header.style.padding = '8px 12px';
+        if (marginTop) header.style.marginTop = '8px';
+        header.style.fontWeight = 'bold';
+        header.style.fontSize = '0.8rem';
+        header.style.color = 'var(--text-secondary)';
+        header.textContent = title;
+        container.appendChild(header);
+
+        models.forEach(m => container.appendChild(createItem(m.name, m.type)));
+    };
+
+    // Sorting applies inside each section so the local/free/paid grouping stays
+    // intact in both display modes.
+    const sortSection = (models) => state.sortOrder === 'az'
+        ? models.slice().sort((a, b) => a.name.localeCompare(b.name))
+        : models;
+
+    addSection('LOCAL MODELS', sortSection(allLocal));
+    addSection('FREE CLOUD MODELS', sortSection(freeCloud), true);
+    addSection('PAID CLOUD MODELS', sortSection(paidCloud), true);
+
+    if (allLocal.length === 0 && freeCloud.length === 0 && paidCloud.length === 0) {
+        const noRes = document.createElement('div');
+        noRes.style.padding = '1rem';
+        noRes.style.textAlign = 'center';
+        noRes.style.color = 'var(--text-secondary)';
+        noRes.textContent = 'No models found';
+        container.appendChild(noRes);
     }
 }
 

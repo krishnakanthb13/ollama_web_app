@@ -413,6 +413,71 @@ test('local models are listed without suffix filtering and duplicates are remove
     }
 });
 
+test('cloud models are split into free and paid sections', async () => {
+    server.state.models = ['llama3.1:8b'];
+
+    const { context, page } = await openApp(browser, port, {
+        cloudModels: JSON.stringify([
+            'glm-4.7:cloud',
+            'gpt-oss:20b-cloud',
+            'gemma4:31b',
+            'nemotron-3-super',
+            'minimax-m2.1:cloud'
+        ])
+    });
+
+    const readSections = () => page.$eval('#model-list', (list) => {
+        const sections = {};
+        let current = null;
+        for (const child of Array.from(list.children)) {
+            if (child.classList.contains('model-group-header')) {
+                current = child.textContent;
+                sections[current] = [];
+            } else if (current && child.classList.contains('model-option')) {
+                sections[current].push(child.querySelector('.model-name').textContent);
+            }
+        }
+        return sections;
+    });
+
+    try {
+        const sections = await readSections();
+        assert.deepEqual(
+            Object.keys(sections),
+            ['LOCAL MODELS', 'FREE CLOUD MODELS', 'PAID CLOUD MODELS']
+        );
+        assert.deepEqual(sections['LOCAL MODELS'], ['llama3.1:8b']);
+        assert.deepEqual(
+            sections['FREE CLOUD MODELS'],
+            ['gpt-oss:20b-cloud', 'gemma4:31b', 'nemotron-3-super']
+        );
+        assert.deepEqual(
+            sections['PAID CLOUD MODELS'],
+            ['glm-4.7:cloud', 'minimax-m2.1:cloud']
+        );
+
+        await page.click('#model-selector-btn');
+        await page.click('#sort-az');
+
+        const sorted = await readSections();
+        assert.deepEqual(
+            Object.keys(sorted),
+            ['LOCAL MODELS', 'FREE CLOUD MODELS', 'PAID CLOUD MODELS'],
+            'A-Z sorting must not merge the sections'
+        );
+        assert.deepEqual(
+            sorted['FREE CLOUD MODELS'],
+            ['gemma4:31b', 'gpt-oss:20b-cloud', 'nemotron-3-super']
+        );
+        assert.deepEqual(
+            sorted['PAID CLOUD MODELS'],
+            ['glm-4.7:cloud', 'minimax-m2.1:cloud']
+        );
+    } finally {
+        await context.close();
+    }
+});
+
 test('quality label follows the preset and think is gated by model support', async () => {
     server.state.models = ['gpt-oss:20b', 'gemma3:4b'];
 

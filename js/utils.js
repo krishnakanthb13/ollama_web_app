@@ -277,6 +277,45 @@
     }
 
     /**
+     * Normalise a cloud model identifier for plan lookup. Ollama exposes the
+     * same model under API names (`gemma4:31b`) and CLI aliases such as
+     * `gemma4:31b-cloud`, so a trailing cloud tag is ignored when matching.
+     *
+     * @param {unknown} value
+     * @returns {string}
+     */
+    function normalizeCloudModelName(value) {
+        if (typeof value !== 'string') return '';
+        return value.trim().toLowerCase().replace(/[-:]cloud$/, '');
+    }
+
+    /**
+     * Split cloud models into free-tier and paid lists. The relative order of
+     * each list follows the input so callers can decide how to sort.
+     *
+     * @param {unknown} models
+     * @param {unknown} freeModels
+     * @returns {{ free: string[], paid: string[] }}
+     */
+    function splitCloudModelsByPlan(models, freeModels) {
+        const freeNames = new Set(
+            uniqueStrings(freeModels).map(normalizeCloudModelName).filter(Boolean)
+        );
+        const free = [];
+        const paid = [];
+
+        for (const name of uniqueStrings(models)) {
+            if (freeNames.has(normalizeCloudModelName(name))) {
+                free.push(name);
+            } else {
+                paid.push(name);
+            }
+        }
+
+        return { free, paid };
+    }
+
+    /**
      * Trim and validate an HTTP(S) endpoint, dropping trailing slashes.
      * Returns `fallback` when the value is not a usable URL.
      *
@@ -376,6 +415,8 @@
         normalizeChoice,
         normalizeSidebarWidth,
         uniqueStrings,
+        normalizeCloudModelName,
+        splitCloudModelsByPlan,
         normalizeEndpointUrl,
         isLoopbackEndpoint,
         canSendApiKey,
