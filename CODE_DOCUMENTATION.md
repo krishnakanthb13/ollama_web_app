@@ -31,7 +31,8 @@ The Ollama Web App follows a **client-side only** architecture (Single Page Appl
 | | `addMessage()` | Saves a user or assistant message to the database. |
 | **State** | `state` object | Holds global app state (`currentChatId`, `models`, `settings`). |
 | **Initialization** | `init()` | Bootstraps the app: binds DOM, loads models, restores settings. |
-| **Chat Logic** | `sendMessage()` | Handles user input, updates UI, calls Ollama API, and streams response. |
+| **Chat Logic** | `sendMessage()` | Handles user input, updates UI, calls Ollama API, streams the response, and persists a partial answer when a request is stopped or interrupted. |
+| | `stopGeneration()` | Cancels the active request; the partial answer is saved with an `interrupted` status. |
 | **Rendering** | `renderChatList()` | Renders the sidebar list of conversation history. |
 | | `appendMessageToUI()` | Adds a new message bubble to the chat window (supports Markdown). |
 | **Utilities** | `escapeHtml()` | Escapes all untrusted values before HTML interpolation. |
@@ -43,7 +44,7 @@ The Ollama Web App follows a **client-side only** architecture (Single Page Appl
 1.  **Initialization**: `init()` -> Load Settings (`localStorage`) -> Open DB -> Load Models (API) -> Render UI.
 2.  **User Message**: Input -> `sendMessage()` -> **Update UI** (Optimistic) -> **Save to DB**.
 3.  **API Call**: `sendMessage()` -> `fetch(Ollama API)` -> **Stream Response**.
-4.  **Bot Response**: Chunk Received -> **Update UI** (Token by Token) -> **Save Final Message to DB**.
+4.  **Bot Response**: Chunk Received -> **Update UI** (Token by Token) -> **Save Final Message to DB**. If the request is stopped, times out, or the user switches chats, the received tokens are still saved with an `interrupted` status.
 
 ## Dependencies
 

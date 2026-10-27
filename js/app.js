@@ -1,5 +1,12 @@
 // --- DB Logic (Inlined for compatibility) ---
-const { escapeHtml, scrollElementToBottom } = window.AppUtils;
+const {
+    escapeHtml,
+    scrollElementToBottom,
+    buildChatTitle,
+    createRequestRegistry
+} = window.AppUtils;
+const requestRegistry = createRequestRegistry();
+const REQUEST_IDLE_TIMEOUT_MS = 60000;
 const DB_NAME = 'OllamaWebApp';
 const DB_VERSION = 1;
 
@@ -98,7 +105,7 @@ class DB {
         });
     }
 
-    async addMessage(chatId, role, content, thinking = '') {
+    async addMessage(chatId, role, content, thinking = '', status = 'complete') {
         await this.open();
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction(['chats', 'messages'], 'readwrite');
@@ -110,10 +117,14 @@ class DB {
                 role,
                 content,
                 thinking,
+                status,
                 created_at: new Date().toISOString()
             };
 
-            msgStore.add(msg);
+            const addRequest = msgStore.add(msg);
+            addRequest.onsuccess = () => {
+                msg.id = addRequest.result;
+            };
 
             const chatReq = chatStore.get(Number(chatId));
             chatReq.onsuccess = () => {
@@ -126,6 +137,7 @@ class DB {
 
             tx.oncomplete = () => resolve(msg);
             tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
         });
     }
 
@@ -241,6 +253,7 @@ function bindDomElements() {
     dom.messagesArea = document.getElementById('messages-area');
     dom.textInput = document.getElementById('user-input');
     dom.sendBtn = document.getElementById('send-btn');
+    dom.stopBtn = document.getElementById('stop-btn');
 
     // Sidebar Buttons
     dom.menuBtn = document.getElementById('menu-btn');
@@ -372,16 +385,17 @@ function setupEventListeners() {
 
     // Chat
     if (dom.sendBtn) dom.sendBtn.addEventListener('click', sendMessage);
+    if (dom.stopBtn) dom.stopBtn.addEventListener('click', stopGeneration);
     if (dom.textInput) {
         dom.textInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                if (!dom.sendBtn.disabled) sendMessage();
+                if (!state.isSending) sendMessage();
             }
         });
         dom.textInput.addEventListener('input', () => {
             autoResizeInput.call(dom.textInput);
-            if (dom.sendBtn) dom.sendBtn.disabled = !dom.textInput.value.trim();
+            if (dom.sendBtn) dom.sendBtn.disabled = state.isSending || !dom.textInput.value.trim();
         });
     }
 
@@ -657,15 +671,20 @@ function renderChatList() {
 
 window.deleteChat = async (e, id) => {
     e.stopPropagation();
-    if (confirm('Are you sure you want to delete this chat?')) {
-        await dbApp.deleteChat(id);
-        if (state.currentChatId === id) {
-            state.currentChatId = null;
-            state.messages = [];
-            renderMessages();
-        }
-        await loadChatList();
+    if (!confirm('Are you sure you want to delete this chat?')) return;
+
+    if (state.currentChatId === id) {
+        await cancelActiveRequest('navigation');
+        setSendingUi(false);
     }
+
+    await dbApp.deleteChat(id);
+    if (state.currentChatId === id) {
+        state.currentChatId = null;
+        state.messages = [];
+        renderMessages();
+    }
+    await loadChatList();
 };
 
 window.exportChatToMarkdown = async (e, id) => {
@@ -700,9 +719,17 @@ window.exportChatToMarkdown = async (e, id) => {
 };
 
 window.loadChat = async (id) => {
+    if (state.currentChatId === id) {
+        toggleSidebar(false);
+        return;
+    }
+
+    // Wait for any in-flight answer to be persisted before swapping chats.
+    await cancelActiveRequest('navigation');
+    setSendingUi(false);
+
     state.currentChatId = id;
     state.messages = await dbApp.getMessages(id);
-    const chat = await dbApp.getChat(id);
     // Removed setModel override to keep model selection persistent globally
     renderMessages();
     toggleSidebar(false);
@@ -710,6 +737,9 @@ window.loadChat = async (id) => {
 };
 
 async function createNewChat() {
+    await cancelActiveRequest('navigation');
+    setSendingUi(false);
+
     state.currentChatId = null;
     state.messages = [];
     renderMessages();
@@ -758,38 +788,7 @@ function appendMessageToUI(msg) {
     div.appendChild(contentDiv);
 
     // Meta / Actions Row
-    const metaRow = document.createElement('div');
-    metaRow.className = 'message-meta-row';
-
-    // Timestamp
-    const timeStr = formatMessageTime(msg.created_at || new Date().toISOString());
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'msg-timestamp';
-    timeSpan.textContent = timeStr;
-    metaRow.appendChild(timeSpan);
-
-    // Copy Button
-    const copyBtn = document.createElement('button');
-    copyBtn.className = 'copy-msg-btn-clean';
-    copyBtn.innerHTML = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor">
-       <path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z"/>
-    </svg>`;
-
-    copyBtn.onclick = () => {
-        navigator.clipboard.writeText(msg.content).then(() => {
-            const original = copyBtn.innerHTML;
-            copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="var(--success)"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>';
-            setTimeout(() => { copyBtn.innerHTML = original; }, 1500);
-        });
-    };
-    metaRow.appendChild(copyBtn);
-
-    // Append metaRow to contentDiv so it stays grouped (or div if outside)
-    // User asked "beside copy icon", which implies visible. Let's put this row outside the contentBubble for clarity, or inside at bottom. 
-    // Putting it outside looks cleaner in modern apps (below bubble).
-    // Let's modify: Append metaRow to div (parent wrapper)
-    div.appendChild(metaRow);
+    div.appendChild(createMessageMetaRow(msg));
 
     if (dom.messagesArea) dom.messagesArea.appendChild(div);
     scrollToBottom();
@@ -806,6 +805,124 @@ function formatMessageTime(isoString) {
     return `${date.toLocaleDateString()} ${time}`;
 }
 
+const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor">
+       <path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z"/>
+    </svg>`;
+const COPIED_ICON = '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="var(--success)"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>';
+
+/**
+ * Copy text to the clipboard, reporting a rejected promise instead of throwing
+ * when the API is unavailable (for example in an insecure context).
+ */
+function copyTextToClipboard(text) {
+    if (!navigator.clipboard?.writeText) {
+        return Promise.reject(new Error('Clipboard API is unavailable'));
+    }
+    return navigator.clipboard.writeText(text);
+}
+
+/**
+ * Build the timestamp/status/copy row shared by streamed and re-rendered
+ * messages.
+ *
+ * @param {{ content?: string, created_at?: string, status?: string }} msg
+ * @returns {HTMLDivElement}
+ */
+function createMessageMetaRow(msg) {
+    const metaRow = document.createElement('div');
+    metaRow.className = 'message-meta-row';
+
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'msg-timestamp';
+    timeSpan.textContent = formatMessageTime(msg.created_at || new Date().toISOString());
+    metaRow.appendChild(timeSpan);
+
+    if (msg.status && msg.status !== 'complete') {
+        const statusSpan = document.createElement('span');
+        statusSpan.className = `msg-status ${msg.status}`;
+        statusSpan.textContent = msg.status === 'interrupted' ? 'Interrupted' : 'Incomplete';
+        metaRow.appendChild(statusSpan);
+    }
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'copy-msg-btn-clean';
+    copyBtn.title = 'Copy';
+    copyBtn.innerHTML = COPY_ICON;
+    copyBtn.onclick = () => {
+        copyTextToClipboard(msg.content || '')
+            .then(() => {
+                copyBtn.innerHTML = COPIED_ICON;
+                setTimeout(() => { copyBtn.innerHTML = COPY_ICON; }, 1500);
+            })
+            .catch((error) => console.warn('Copy failed', error));
+    };
+    metaRow.appendChild(copyBtn);
+
+    return metaRow;
+}
+
+function showChatError(message) {
+    const errorBlock = document.createElement('div');
+    errorBlock.className = 'chat-error';
+    errorBlock.style.color = 'var(--error)';
+    errorBlock.style.marginTop = '10px';
+    errorBlock.textContent = message;
+    return errorBlock;
+}
+
+function setSendingUi(sending) {
+    state.isSending = sending;
+
+    if (dom.sendBtn) {
+        dom.sendBtn.style.display = sending ? 'none' : '';
+        dom.sendBtn.disabled = sending || !dom.textInput?.value.trim();
+    }
+
+    if (dom.stopBtn) {
+        dom.stopBtn.style.display = sending ? 'flex' : 'none';
+        dom.stopBtn.disabled = !sending;
+    }
+}
+
+function stopGeneration() {
+    const request = requestRegistry.current;
+    if (!request) return;
+    requestRegistry.cancel(request, 'user');
+}
+
+/**
+ * Cancel the in-flight generation (if any) and wait until it has persisted its
+ * partial answer. Navigation handlers await this before swapping chats so late
+ * stream chunks can never land in the wrong conversation.
+ */
+function cancelActiveRequest(reason = 'navigation') {
+    const request = requestRegistry.current;
+    if (!request) return Promise.resolve();
+    requestRegistry.cancel(request, reason);
+    return request.done;
+}
+
+function isRequestVisible(request) {
+    return Boolean(request) && state.currentChatId === request.chatId;
+}
+
+/**
+ * Read one stream chunk, rejecting when the server stalls for too long. The
+ * underlying request is aborted by the caller.
+ */
+function readWithIdleTimeout(reader, timeoutMs) {
+    let timer = null;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            reject(new Error(`The response timed out after ${Math.round(timeoutMs / 1000)} seconds of inactivity.`));
+        }, timeoutMs);
+    });
+
+    return Promise.race([reader.read(), timeout])
+        .finally(() => clearTimeout(timer));
+}
+
 async function sendMessage() {
     const text = dom.textInput.value.trim();
     if (!text || state.isSending) return;
@@ -815,47 +932,77 @@ async function sendMessage() {
         return;
     }
 
-    state.isSending = true;
-    dom.sendBtn.disabled = true;
+    const model = state.currentModel;
+    const isLocal = state.localModels.includes(model);
+    const history = state.messages.map((message) => ({ role: message.role, content: message.content }));
+    const request = requestRegistry.start({ model, chatId: state.currentChatId });
+    setSendingUi(true);
 
-    if (!state.currentChatId) {
-        const title = text.substring(0, 30) + (text.length > 30 ? '...' : '');
-        const chat = await dbApp.createChat(title, state.currentModel);
-        state.currentChatId = chat.id;
-        loadChatList();
-    }
-
-    await dbApp.addMessage(state.currentChatId, 'user', text);
-    state.messages.push({ role: 'user', content: text, created_at: new Date().toISOString() });
-    appendMessageToUI({ role: 'user', content: text, created_at: new Date().toISOString() });
-
-    dom.textInput.value = '';
-    autoResizeInput.call(dom.textInput);
-
-    const assistantMsg = { role: 'assistant', content: '', thinking: '', created_at: new Date().toISOString() };
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'message assistant-msg';
-    if (dom.messagesArea) dom.messagesArea.appendChild(msgDiv); // Temporary append for streaming
-
-    const contentBlock = document.createElement('div');
-    contentBlock.className = 'message-content markdown-body';
-    msgDiv.appendChild(contentBlock); // Add content block first
-
-    let thinkingBlock = null;
+    let chatId = state.currentChatId;
     let url = '';
-    let headers = { 'Content-Type': 'application/json' };
+    let reader = null;
+    let msgDiv = null;
+    let contentBlock = null;
+    let thinkingBlock = null;
+    let metaRow = null;
+    let completed = false;
 
-    if (state.localModels.includes(state.currentModel)) {
-        url = `${state.localUrl}/api/chat`;
-    } else {
-        url = `${state.cloudUrl}/chat`;
-        if (state.cloudApiKey) headers['Authorization'] = `Bearer ${state.cloudApiKey}`;
-    }
+    let assistantMsg = {
+        role: 'assistant',
+        content: '',
+        thinking: '',
+        created_at: new Date().toISOString(),
+        status: 'interrupted'
+    };
 
     try {
+        if (!chatId) {
+            const chat = await dbApp.createChat(buildChatTitle(text), model);
+            chatId = chat.id;
+            state.currentChatId = chat.id;
+            request.chatId = chat.id;
+            await loadChatList();
+        } else {
+            request.chatId = chatId;
+        }
+
+        const userMessage = await dbApp.addMessage(chatId, 'user', text);
+
+        if (isRequestVisible(request)) {
+            const userEntry = {
+                role: 'user',
+                content: text,
+                created_at: userMessage?.created_at || new Date().toISOString()
+            };
+            state.messages.push(userEntry);
+            appendMessageToUI(userEntry);
+        }
+
+        dom.textInput.value = '';
+        autoResizeInput.call(dom.textInput);
+        if (dom.sendBtn) dom.sendBtn.disabled = true;
+
+        msgDiv = document.createElement('div');
+        msgDiv.className = 'message assistant-msg';
+
+        contentBlock = document.createElement('div');
+        contentBlock.className = 'message-content markdown-body';
+        msgDiv.appendChild(contentBlock);
+
+        if (dom.messagesArea && isRequestVisible(request)) dom.messagesArea.appendChild(msgDiv);
+        scrollToBottom();
+
+        let headers = { 'Content-Type': 'application/json' };
+        if (isLocal) {
+            url = `${state.localUrl}/api/chat`;
+        } else {
+            url = `${state.cloudUrl}/chat`;
+            if (state.cloudApiKey) headers['Authorization'] = `Bearer ${state.cloudApiKey}`;
+        }
+
         const payload = {
-            model: state.currentModel,
-            messages: state.messages.map(m => ({ role: m.role, content: m.content })),
+            model,
+            messages: history.concat({ role: 'user', content: text }),
             stream: true,
             options: { web_search: state.enableSearch },
             think: state.qualityPreset !== 'none' ? state.qualityPreset : undefined
@@ -864,17 +1011,18 @@ async function sendMessage() {
         const response = await fetch(url, {
             method: 'POST',
             headers,
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: request.controller.signal
         });
 
         if (!response.ok) throw new Error(`API Error: ${response.status}`);
 
-        const reader = response.body.getReader();
+        reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
 
         while (true) {
-            const { done, value } = await reader.read();
+            const { done, value } = await readWithIdleTimeout(reader, REQUEST_IDLE_TIMEOUT_MS);
             if (done) break;
 
             buffer += decoder.decode(value, { stream: true });
@@ -892,58 +1040,84 @@ async function sendMessage() {
                             msgDiv.insertBefore(thinkingBlock, contentBlock);
                         }
                         assistantMsg.thinking += json.message.thinking;
-                        // Use textContent to keep it safe, but CSS handles pre-wrap
                         thinkingBlock.textContent = assistantMsg.thinking;
                     }
                     if (json.message?.content) {
                         assistantMsg.content += json.message.content;
                         try {
                             contentBlock.innerHTML = DOMPurify.sanitize(marked.parse(assistantMsg.content));
-                        } catch (e) { contentBlock.textContent = assistantMsg.content; }
+                        } catch (e) {
+                            contentBlock.textContent = assistantMsg.content;
+                        }
                     }
-                    scrollToBottom();
-                } catch (e) { console.error(e); }
+                } catch (e) {
+                    console.error('Failed to parse stream chunk', e);
+                }
+            }
+            scrollToBottom();
+        }
+
+        completed = !request.cancelled;
+        if (completed && contentBlock) {
+            try {
+                contentBlock.innerHTML = DOMPurify.sanitize(marked.parse(assistantMsg.content));
+            } catch (e) {
+                contentBlock.textContent = assistantMsg.content;
             }
         }
-        await dbApp.addMessage(state.currentChatId, 'assistant', assistantMsg.content, assistantMsg.thinking);
-        state.messages.push(assistantMsg);
-
-        // Finalize UI with meta row (remove temporary streaming div and re-render properly or just append meta)
-        // Easiest is to append meta row to the existing msgDiv
-        const metaRow = document.createElement('div');
-        metaRow.className = 'message-meta-row';
-
-        const timeStr = formatMessageTime(assistantMsg.created_at);
-        const timeSpan = document.createElement('span');
-        timeSpan.className = 'msg-timestamp';
-        timeSpan.textContent = timeStr;
-        metaRow.appendChild(timeSpan);
-
-        const copyBtn = document.createElement('button');
-        copyBtn.className = 'copy-msg-btn-clean';
-        copyBtn.title = "Copy";
-        copyBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor">
-           <path d="M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z"/>
-        </svg>`;
-        copyBtn.onclick = () => {
-            navigator.clipboard.writeText(assistantMsg.content).then(() => {
-                const original = copyBtn.innerHTML;
-                copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="var(--success)"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>';
-                setTimeout(() => { copyBtn.innerHTML = original; }, 1500);
-            });
-        };
-        metaRow.appendChild(copyBtn);
-        msgDiv.appendChild(metaRow); // Append below content block
-
     } catch (e) {
-        contentBlock.innerHTML += `<div style="color:var(--error); margin-top:10px;">Error: ${escapeHtml(e.message)}</div>`;
-        if (e.message.includes('Failed to fetch') && url.includes('localhost')) {
-            contentBlock.innerHTML += `<br><small>Hint: Ensure Ollama is running with <code>OLLAMA_ORIGINS="*"</code> environment variable.</small>`;
+        if (!request.cancelled && e.name !== 'AbortError') {
+            console.error('Chat request failed', e);
+            if (contentBlock) {
+                contentBlock.appendChild(showChatError(`Error: ${e.message}`));
+                if (e.message.includes('Failed to fetch') && url.includes('localhost')) {
+                    const hint = document.createElement('small');
+                    hint.innerHTML = '<br>Hint: Ensure Ollama is running with <code>OLLAMA_ORIGINS="*"</code> environment variable.';
+                    contentBlock.appendChild(hint);
+                }
+            }
         }
     } finally {
-        state.isSending = false;
-        if (dom.sendBtn) dom.sendBtn.disabled = !dom.textInput.value.trim();
+        if (!completed) {
+            try { request.controller.abort(); } catch (e) { /* already aborted */ }
+            try { reader?.cancel?.().catch(() => {}); } catch (e) { /* stream already closed */ }
+        }
+
+        const hasContent = assistantMsg.content.length > 0 || assistantMsg.thinking.length > 0;
+
+        if (hasContent) {
+            assistantMsg.status = completed ? 'complete' : 'interrupted';
+
+            if (chatId) {
+                try {
+                    assistantMsg = await dbApp.addMessage(
+                        chatId,
+                        'assistant',
+                        assistantMsg.content,
+                        assistantMsg.thinking,
+                        assistantMsg.status
+                    );
+                } catch (e) {
+                    console.error('Failed to save assistant message', e);
+                }
+            }
+
+            if (msgDiv && !metaRow) {
+                metaRow = createMessageMetaRow(assistantMsg);
+                msgDiv.appendChild(metaRow);
+            }
+
+            if (isRequestVisible(request)) {
+                state.messages.push(assistantMsg);
+            }
+        } else if (msgDiv?.parentNode) {
+            // A stopped request with no tokens should not leave an empty bubble.
+            msgDiv.remove();
+        }
+
+        requestRegistry.finish(request);
+        setSendingUi(false);
+        scrollToBottom();
         if (dom.textInput) dom.textInput.focus();
     }
 }

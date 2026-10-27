@@ -1,10 +1,10 @@
 'use strict';
 
-const { before, after, test } = require('node:test');
+const { before, after, beforeEach, test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createMockServer } = require('./mock-server.js');
-const { launchBrowser, openApp, sendMessage } = require('./e2e-helpers.js');
+const { createMockServer, sleep, startNdjson } = require('./mock-server.js');
+const { launchBrowser, openApp, sendMessage, readDbSnapshot } = require('./e2e-helpers.js');
 
 let server;
 let browser;
@@ -14,6 +14,11 @@ before(async () => {
     server = createMockServer();
     port = await server.listen();
     browser = await launchBrowser();
+});
+
+beforeEach(() => {
+    server.state.chatHandler = null;
+    server.state.requests.length = 0;
 });
 
 after(async () => {
@@ -113,6 +118,151 @@ test('mobile sidebar closes from the overlay and Escape', async () => {
         await page.waitForFunction(
             () => !document.getElementById('sidebar').classList.contains('open')
         );
+    } finally {
+        await context.close();
+    }
+});
+
+test('stop button persists a partial answer and reuses it as context', async () => {
+    server.state.models = ['good-model:latest-cloud'];
+    server.state.chatHandler = async (req, res, body) => {
+        const stream = startNdjson(res, body.model);
+        stream.chunk({ role: 'assistant', content: 'Part one' });
+        await sleep(2000);
+        stream.chunk({ role: 'assistant', content: ' part two' });
+        stream.end();
+    };
+
+    const { context, page } = await openApp(browser, port);
+
+    try {
+        await sendMessage(page, 'slow prompt');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('Part one'),
+            null,
+            { timeout: 10000 }
+        );
+        await page.waitForFunction(
+            () => getComputedStyle(document.getElementById('stop-btn')).display !== 'none'
+        );
+
+        await page.click('#stop-btn');
+        await page.waitForFunction(() => {
+            const stop = document.getElementById('stop-btn');
+            const send = document.getElementById('send-btn');
+            return getComputedStyle(stop).display === 'none'
+                && getComputedStyle(send).display !== 'none';
+        });
+
+        await page.waitForSelector('.msg-status');
+        assert.equal((await page.textContent('.msg-status')).trim(), 'Interrupted');
+
+        const stopped = await readDbSnapshot(page);
+        assert.equal(stopped.messages.length, 2, 'only the user message and partial answer should exist');
+        const partial = stopped.messages.find((message) => message.role === 'assistant');
+        assert.equal(partial.status, 'interrupted');
+        assert.ok(partial.content.includes('Part one'));
+        assert.equal(partial.content.includes('part two'), false);
+
+        server.state.chatHandler = null;
+        await sendMessage(page, 'continue please');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('from the mock.'),
+            null,
+            { timeout: 10000 }
+        );
+
+        const followUp = server.state.requests.at(-1);
+        assert.deepEqual(
+            followUp.messages.map((message) => message.role),
+            ['user', 'assistant', 'user']
+        );
+        assert.ok(followUp.messages[1].content.includes('Part one'));
+    } finally {
+        await context.close();
+    }
+});
+
+test('switching chats mid-stream saves the partial answer without leaking it', async () => {
+    server.state.models = ['good-model:latest-cloud'];
+
+    const { context, page } = await openApp(browser, port);
+
+    try {
+        await sendMessage(page, 'hello one');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('from the mock.'),
+            null,
+            { timeout: 10000 }
+        );
+
+        await page.click('#header-new-chat-btn');
+        await sendMessage(page, 'hello two');
+        await page.waitForFunction(
+            () => document.querySelectorAll('.chat-item').length === 2
+                && document.getElementById('messages-area').textContent.includes('from the mock.'),
+            null,
+            { timeout: 10000 }
+        );
+
+        server.state.chatHandler = async (req, res, body) => {
+            const stream = startNdjson(res, body.model);
+            stream.chunk({ role: 'assistant', content: 'SLOW-1' });
+            await sleep(2500);
+            stream.chunk({ role: 'assistant', content: ' SLOW-2' });
+            stream.end();
+        };
+
+        await sendMessage(page, 'slow prompt');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('SLOW-1'),
+            null,
+            { timeout: 10000 }
+        );
+
+        // Chat A is the second item because chats are ordered newest first.
+        await page.click('.chat-item:nth-child(2)');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('hello one'),
+            null,
+            { timeout: 10000 }
+        );
+
+        const switched = await readDbSnapshot(page);
+        assert.equal(
+            switched.messages.filter((message) => message.chat_id === 0).length,
+            0,
+            'no message may be stored against a missing chat'
+        );
+
+        const chatA = switched.chats.find((chat) => chat.title === 'hello one');
+        const chatB = switched.chats.find((chat) => chat.title === 'hello two');
+        assert.ok(chatA && chatB, 'both chats should exist');
+
+        const chatAMessages = switched.messages.filter((message) => message.chat_id === chatA.id);
+        const chatBMessages = switched.messages.filter((message) => message.chat_id === chatB.id);
+        assert.deepEqual(chatAMessages.map((message) => message.role), ['user', 'assistant']);
+        assert.equal(chatBMessages.length, 4, 'chat B keeps two complete messages plus the new prompt and its partial answer');
+
+        const partial = chatBMessages.find((message) => message.status === 'interrupted');
+        assert.ok(partial, 'the interrupted answer should be saved in chat B');
+        assert.ok(partial.content.includes('SLOW-1'));
+        assert.equal(partial.content.includes('SLOW-2'), false);
+
+        await sleep(2800);
+        const later = await readDbSnapshot(page);
+        const laterPartial = later.messages.find((message) => message.id === partial.id);
+        assert.equal(laterPartial.content.includes('SLOW-2'), false, 'late chunks must not reach the stored answer');
+        assert.equal(later.messages.filter((message) => message.chat_id === 0).length, 0);
+
+        // Re-open chat B: the partial answer is rendered with its status badge.
+        await page.click('.chat-item:nth-child(1)');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('SLOW-1'),
+            null,
+            { timeout: 10000 }
+        );
+        assert.equal((await page.textContent('.msg-status')).trim(), 'Interrupted');
     } finally {
         await context.close();
     }

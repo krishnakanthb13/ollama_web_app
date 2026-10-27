@@ -48,5 +48,76 @@
         element.scrollTop = element.scrollHeight;
     }
 
-    return { escapeHtml, scrollElementToBottom };
+    /**
+     * Build a stable chat title without splitting surrogate pairs (emoji).
+     *
+     * @param {unknown} text
+     * @param {number} [maxLength]
+     * @returns {string}
+     */
+    function buildChatTitle(text, maxLength = 30) {
+        const characters = Array.from(String(text ?? '').trim());
+        if (characters.length === 0) return 'New chat';
+
+        const limit = Number.isFinite(maxLength) && maxLength > 0 ? Math.floor(maxLength) : 30;
+        return characters.length > limit
+            ? `${characters.slice(0, limit).join('')}...`
+            : characters.join('');
+    }
+
+    /**
+     * Tracks exactly one in-flight generation. The registry makes the
+     * "is this still the active request?" checks explicit and testable, which
+     * prevents late stream chunks from touching a newly opened chat.
+     */
+    function createRequestRegistry() {
+        let current = null;
+        let sequence = 0;
+
+        return {
+            start(meta = {}) {
+                const request = Object.assign({
+                    id: ++sequence,
+                    cancelled: false,
+                    stopReason: null,
+                    controller: new AbortController()
+                }, meta);
+
+                request.done = new Promise((resolve) => {
+                    request._resolveDone = resolve;
+                });
+
+                current = request;
+                return request;
+            },
+
+            isCurrent(request) {
+                return Boolean(request) && current === request && !request.cancelled;
+            },
+
+            cancel(request, reason = 'navigation') {
+                if (!request) return;
+                if (!request.stopReason) request.stopReason = reason;
+                request.cancelled = true;
+                request.controller?.abort();
+                if (current === request) current = null;
+            },
+
+            finish(request) {
+                if (request) request._resolveDone?.();
+                if (current === request) current = null;
+            },
+
+            get current() {
+                return current;
+            }
+        };
+    }
+
+    return {
+        escapeHtml,
+        scrollElementToBottom,
+        buildChatTitle,
+        createRequestRegistry
+    };
 });

@@ -817,6 +817,33 @@ textarea:focus {
   cursor: default;
 }
 
+#stop-btn {
+  background-color: var(--error);
+  color: white;
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s, opacity 0.2s;
+  flex-shrink: 0;
+}
+
+#stop-btn:hover {
+  opacity: 0.85;
+}
+
+.msg-status {
+  font-size: 0.7rem;
+  color: var(--warning, #f59e0b);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
 
 /* Markdown Specifics */
 .markdown-body {

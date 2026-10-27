@@ -61,11 +61,19 @@ function startNdjson(res, model) {
         'Cache-Control': 'no-store',
         'Connection': 'keep-alive'
     });
+
+    const write = (payload) => {
+        if (res.writableEnded || res.destroyed) return false;
+        res.write(JSON.stringify(payload) + '\n');
+        return true;
+    };
+
     return {
         chunk(message, done = false) {
-            res.write(JSON.stringify({ model, message, done }) + '\n');
+            return write({ model, message, done });
         },
         end() {
+            if (res.writableEnded || res.destroyed) return;
             res.end(JSON.stringify({ model, message: { role: 'assistant', content: '' }, done: true }) + '\n');
         }
     };
@@ -125,7 +133,10 @@ function createMockServer() {
             });
         },
         close() {
-            return new Promise((resolve) => server.close(() => resolve()));
+            return new Promise((resolve) => {
+                server.closeAllConnections?.();
+                server.close(() => resolve());
+            });
         }
     };
 }

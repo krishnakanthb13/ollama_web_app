@@ -97,7 +97,7 @@ class DB {
         });
     }
 
-    async addMessage(chatId, role, content, thinking = '') {
+    async addMessage(chatId, role, content, thinking = '', status = 'complete') {
         await this.open();
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction(['chats', 'messages'], 'readwrite');
@@ -109,11 +109,15 @@ class DB {
                 role,
                 content,
                 thinking,
+                status,
                 created_at: new Date().toISOString()
             };
 
-            msgStore.add(msg);
-            
+            const addRequest = msgStore.add(msg);
+            addRequest.onsuccess = () => {
+                msg.id = addRequest.result;
+            };
+
             // Update chat timestamp
             const chatReq = chatStore.get(Number(chatId));
             chatReq.onsuccess = () => {
@@ -127,6 +131,7 @@ class DB {
 
             tx.oncomplete = () => resolve(msg);
             tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
         });
     }
 
