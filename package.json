@@ -1,6 +1,6 @@
 {
     "name": "ollama-web-app",
-    "version": "0.0.17",
+    "version": "0.0.18",
     "description": "Lightweight web interface for Ollama",
     "scripts": {
         "start": "http-server . -o -c-1 -a localhost -p 8087",

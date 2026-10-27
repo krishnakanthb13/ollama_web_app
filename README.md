@@ -8,7 +8,7 @@ A lightweight, secure, and independent web application for chatting with Ollama 
 
 ### Highlights
 1.  **Sidebar (Left)**: Organize your chats, delete old threads, or download them as Markdown. Resizable for your convenience.
-2.  **Model Selector (Center)**: Switch between local and cloud models instantly. Supports "Thinking" models and Web Search capabilities.
+2.  **Model Selector (Center)**: Free cloud models are listed first, followed by local models and then paid cloud models, each as a separate section with a count. Supports "Thinking", "Tools", and power indicators.
 3.  **Settings Panel (Right)**: Configure API endpoints, manage hidden models, and export your entire database.
 
 ## Documentation

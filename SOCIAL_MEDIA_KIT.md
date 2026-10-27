@@ -15,7 +15,7 @@ It’s a lightweight, secure, and completely private web interface for interacti
 **What's New in v1.0:**
 ✅ **PWA Support**: Install it as a standalone app on your desktop.
 ✅ **Markdown Export**: Save your best coding or brainstorming sessions as `.md` files.
-✅ **Smart UI**: Visual indicators for "Thinking" models (like DeepSeek R1) and Web Search capabilities.
+✅ **Smart UI**: Visual indicators for "Thinking", "Tools", and high-power models, plus free cloud models listed first.
 ✅ **Zero-Build**: Runs on vanilla HTML/JS/CSS. No Docker or Node backend required!
 
 Use it to chat with Llama 3, Mistral, or DeepSeek entirely offline. Your data never leaves your browser.
@@ -41,7 +41,7 @@ Just released a big update that turns it into a **Progressive Web App (PWA)**.
 *   **Installable**: Chrome/Edge will let you install it as a desktop app.
 *   **Offline-Ready**: Loads instantly.
 *   **Markdown Export**: One-click download of your chat threads to `.md`.
-*   **Model Icons**: Automatically detects and shows icons for "Thinking" (Reasoning) models and Web Search capabilities.
+*   **Model Icons**: Automatically detects and shows icons for "Thinking" (Reasoning), "Tools", and model size/power.
 *   **100% Local**: Uses IndexedDB for chat history. No server-side persistence.
 
 It's open source and written in plain HTML/CSS/JS. Would love to hear what you think!

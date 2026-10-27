@@ -392,6 +392,34 @@
     }
 
     /**
+     * Rewrite stored cloud entries to the canonical free-tier spelling. Legacy
+     * default catalogues listed free models under CLI-style aliases
+     * (`gpt-oss:20b-cloud`), and those exact names collide with the local
+     * daemon's mirror of cloud models, hiding them from the free section.
+     * Duplicate spellings of the same model collapse into the canonical name.
+     *
+     * @param {unknown} models
+     * @param {unknown} freeModels
+     * @returns {string[]}
+     */
+    function canonicalizeFreeCloudModels(models, freeModels) {
+        const canonicalByNormalized = new Map();
+        for (const name of uniqueStrings(freeModels)) {
+            const normalized = normalizeCloudModelName(name);
+            if (normalized) canonicalByNormalized.set(normalized, name);
+        }
+
+        const result = [];
+        for (const name of uniqueStrings(models)) {
+            const normalized = normalizeCloudModelName(name);
+            const canonical = (normalized && canonicalByNormalized.get(normalized)) || name;
+            if (!result.includes(canonical)) result.push(canonical);
+        }
+
+        return result;
+    }
+
+    /**
      * Split cloud models into free-tier and paid lists. The relative order of
      * each list follows the input so callers can decide how to sort.
      *
@@ -522,6 +550,7 @@
         normalizeCloudModelName,
         isFreeCloudModel,
         mergeCloudModels,
+        canonicalizeFreeCloudModels,
         splitCloudModelsByPlan,
         normalizeEndpointUrl,
         isLoopbackEndpoint,

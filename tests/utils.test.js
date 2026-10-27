@@ -19,6 +19,7 @@ const {
     normalizeCloudModelName,
     isFreeCloudModel,
     mergeCloudModels,
+    canonicalizeFreeCloudModels,
     splitCloudModelsByPlan,
     normalizeEndpointUrl,
     isLoopbackEndpoint,
@@ -242,6 +243,19 @@ test('mergeCloudModels tolerates bad input and does not mutate its inputs', () =
     assert.deepEqual(mergeCloudModels(existing, additions), ['glm-4.7:cloud', 'beam']);
     assert.deepEqual(existing, ['glm-4.7:cloud']);
     assert.deepEqual(mergeCloudModels(null, null), []);
+});
+
+test('canonicalizeFreeCloudModels rewrites free aliases to the API name', () => {
+    assert.deepEqual(
+        canonicalizeFreeCloudModels(
+            ['gpt-oss:20b-cloud', 'glm-4.7:cloud', 'gpt-oss:20b', 'nemotron-3-nano:30b:cloud'],
+            ['gpt-oss:20b', 'nemotron-3-nano:30b']
+        ),
+        ['gpt-oss:20b', 'glm-4.7:cloud', 'nemotron-3-nano:30b'],
+        'aliases collapse into the canonical name and paid entries stay untouched'
+    );
+    assert.deepEqual(canonicalizeFreeCloudModels(null, ['beam']), []);
+    assert.deepEqual(canonicalizeFreeCloudModels([], ['beam']), []);
 });
 
 test('splitCloudModelsByPlan separates free models and accepts alias suffixes', () => {

@@ -500,12 +500,13 @@ test('cloud models are split into free and paid sections', async () => {
         const sections = await readSections();
         assert.deepEqual(
             Object.keys(sections),
-            ['LOCAL MODELS', 'FREE CLOUD MODELS', 'PAID CLOUD MODELS']
+            ['FREE CLOUD MODELS', 'LOCAL MODELS', 'PAID CLOUD MODELS'],
+            'free cloud models must be listed first'
         );
         assert.deepEqual(sections['LOCAL MODELS'], ['llama3.1:8b', 'gemma4:31b']);
         assert.deepEqual(
             sections['FREE CLOUD MODELS'],
-            ['gpt-oss:20b-cloud', 'nemotron-3-super'],
+            ['gpt-oss:20b', 'nemotron-3-super'],
             'a local model that shares a free cloud name must stay local'
         );
         assert.deepEqual(
@@ -524,12 +525,12 @@ test('cloud models are split into free and paid sections', async () => {
         const sorted = await readSections();
         assert.deepEqual(
             Object.keys(sorted),
-            ['LOCAL MODELS', 'FREE CLOUD MODELS', 'PAID CLOUD MODELS'],
+            ['FREE CLOUD MODELS', 'LOCAL MODELS', 'PAID CLOUD MODELS'],
             'A-Z sorting must not merge the sections'
         );
         assert.deepEqual(
             sorted['FREE CLOUD MODELS'],
-            ['gpt-oss:20b-cloud', 'nemotron-3-super']
+            ['gpt-oss:20b', 'nemotron-3-super']
         );
         assert.deepEqual(
             sorted['PAID CLOUD MODELS'],
@@ -552,10 +553,14 @@ test('existing cloud lists are backfilled with free models once', async () => {
         for (const name of ['beam', 'gemma4:31b', 'nemotron-3-super', 'nemotron-3-ultra']) {
             assert.ok(models.includes(name), `${name} should be backfilled`);
         }
-        assert.equal(
+        assert.ok(
             models.includes('gpt-oss:20b'),
+            'a legacy -cloud alias should be rewritten to the API name'
+        );
+        assert.equal(
+            models.includes('gpt-oss:20b-cloud'),
             false,
-            'the existing -cloud alias must not be duplicated'
+            'the legacy alias must not survive as a duplicate spelling'
         );
         assert.equal(
             await page.evaluate(() => localStorage.getItem('cloudCatalogVersion')),
@@ -574,6 +579,74 @@ test('existing cloud lists are backfilled with free models once', async () => {
 
         const reloaded = await page.evaluate(() => state.cloudModels);
         assert.equal(reloaded.includes('beam'), false, 'migration should run only once');
+    } finally {
+        await context.close();
+    }
+});
+
+test('legacy free aliases shadowed by local cloud mirrors still list all seven free models', async () => {
+    // The local Ollama daemon mirrors cloud models under `-cloud` names, and
+    // legacy default catalogues stored three of the free models with exactly
+    // those spellings, which used to hide them from the free section.
+    server.state.models = [
+        'llama3.1:8b',
+        'beam:cloud',
+        'gemma4:31b-cloud',
+        'gpt-oss:120b-cloud',
+        'gpt-oss:20b-cloud',
+        'nemotron-3-nano:30b-cloud',
+        'nemotron-3-super:cloud',
+        'nemotron-3-ultra:cloud'
+    ];
+
+    const { context, page } = await openApp(browser, port, {
+        cloudModels: JSON.stringify([
+            'gpt-oss:120b-cloud',
+            'gpt-oss:20b-cloud',
+            'nemotron-3-nano:30b-cloud',
+            'beam',
+            'gemma4:31b',
+            'nemotron-3-super',
+            'nemotron-3-ultra',
+            'glm-4.7:cloud'
+        ]),
+        cloudCatalogVersion: '1'
+    });
+
+    try {
+        const sections = await page.$eval('#model-list', (list) => {
+            const result = {};
+            let current = null;
+            for (const child of Array.from(list.children)) {
+                if (child.classList.contains('model-group-header')) {
+                    current = child.querySelector('.model-group-title').textContent;
+                    result[current] = [];
+                } else if (current && child.classList.contains('model-option')) {
+                    result[current].push(child.querySelector('.model-name').textContent);
+                }
+            }
+            return result;
+        });
+
+        assert.deepEqual(
+            sections['FREE CLOUD MODELS'],
+            [
+                'gpt-oss:120b',
+                'gpt-oss:20b',
+                'nemotron-3-nano:30b',
+                'beam',
+                'gemma4:31b',
+                'nemotron-3-super',
+                'nemotron-3-ultra'
+            ],
+            'all seven free models must appear under their API names'
+        );
+        assert.deepEqual(sections['PAID CLOUD MODELS'], ['glm-4.7:cloud']);
+        assert.ok(sections['LOCAL MODELS'].includes('llama3.1:8b'));
+
+        const persisted = await page.evaluate(() => JSON.parse(localStorage.getItem('cloudModels')));
+        assert.equal(persisted.includes('gpt-oss:20b-cloud'), false, 'aliases are rewritten in storage');
+        assert.ok(persisted.includes('gpt-oss:20b'));
     } finally {
         await context.close();
     }

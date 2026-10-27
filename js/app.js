@@ -14,6 +14,7 @@ const {
     buildConversationContext,
     isFreeCloudModel,
     mergeCloudModels,
+    canonicalizeFreeCloudModels,
     splitCloudModelsByPlan,
     normalizeEndpointUrl,
     isLoopbackEndpoint,
@@ -231,21 +232,25 @@ function loadStoredCloudModels() {
         parseStoredArray(safeStorageGet('cloudModels'), DEFAULT_CLOUD_MODELS)
     );
 
-    if (safeStorageGet('cloudCatalogVersion') === CLOUD_CATALOG_VERSION) {
-        return stored;
-    }
+    // Legacy default catalogues stored free models under `-cloud` aliases, which
+    // collide with the local daemon's mirror of cloud models and drop out of the
+    // free section. Rewrite them to the canonical API name first.
+    const canonical = canonicalizeFreeCloudModels(stored, FREE_CLOUD_MODELS);
 
-    // Keep an explicitly emptied list empty, but backfill free-tier models for
-    // existing catalogues. `mergeCloudModels` avoids duplicate `-cloud` aliases.
-    const migrated = stored.length > 0
-        ? mergeCloudModels(stored, FREE_CLOUD_MODELS)
-        : stored;
+    const migrated = safeStorageGet('cloudCatalogVersion') === CLOUD_CATALOG_VERSION
+        ? canonical
+        // Keep an explicitly emptied list empty, but backfill free-tier models
+        // for existing catalogues. `mergeCloudModels` avoids duplicate aliases.
+        : (canonical.length > 0 ? mergeCloudModels(canonical, FREE_CLOUD_MODELS) : canonical);
 
-    try {
-        localStorage.setItem('cloudModels', JSON.stringify(migrated));
-        localStorage.setItem('cloudCatalogVersion', CLOUD_CATALOG_VERSION);
-    } catch (error) {
-        // Storage is best-effort; the in-memory list still works for this session.
+    const changed = JSON.stringify(migrated) !== JSON.stringify(stored);
+    if (changed || safeStorageGet('cloudCatalogVersion') !== CLOUD_CATALOG_VERSION) {
+        try {
+            if (changed) localStorage.setItem('cloudModels', JSON.stringify(migrated));
+            localStorage.setItem('cloudCatalogVersion', CLOUD_CATALOG_VERSION);
+        } catch (error) {
+            // Storage is best-effort; the in-memory list still works for this session.
+        }
     }
 
     return migrated;
@@ -559,8 +564,12 @@ function toggleDropdown(type) {
     if (!isVisible) {
         target.classList.add('show');
         (type === 'model' ? dom.modelSelectorBtn : dom.qualityBtn)?.setAttribute('aria-expanded', 'true');
-        if (type === 'model' && dom.modelSearchInput) {
-            setTimeout(() => dom.modelSearchInput.focus(), 100);
+        if (type === 'model') {
+            // Always start at the free cloud section, even after the last visit
+            // scrolled down to paid models.
+            if (dom.modelDropdown) dom.modelDropdown.scrollTop = 0;
+            if (dom.modelList) dom.modelList.scrollTop = 0;
+            if (dom.modelSearchInput) setTimeout(() => dom.modelSearchInput.focus(), 100);
         }
     }
 }
@@ -798,11 +807,17 @@ function renderModelList() {
         ? models.slice().sort((a, b) => a.name.localeCompare(b.name))
         : models;
 
-    addSection('LOCAL MODELS', sortSection(allLocal));
-    addSection('FREE CLOUD MODELS', sortSection(freeCloud), true);
-    addSection('PAID CLOUD MODELS', sortSection(paidCloud), true);
+    // Free cloud models come first because they are the ones most users can
+    // try immediately; paid cloud models stay last.
+    const sections = [
+        { title: 'FREE CLOUD MODELS', models: sortSection(freeCloud) },
+        { title: 'LOCAL MODELS', models: sortSection(allLocal) },
+        { title: 'PAID CLOUD MODELS', models: sortSection(paidCloud) }
+    ].filter((section) => section.models.length > 0);
 
-    if (allLocal.length === 0 && freeCloud.length === 0 && paidCloud.length === 0) {
+    sections.forEach((section, index) => addSection(section.title, section.models, index > 0));
+
+    if (sections.length === 0) {
         const noRes = document.createElement('div');
         noRes.className = 'model-empty';
         noRes.textContent = state.modelSearchQuery ? 'No models match that search' : 'No models found';
@@ -1047,8 +1062,8 @@ function renderMessages() {
             && state.cloudModels.includes(state.currentModel)
             && !state.localModels.includes(state.currentModel);
         const planNote = !isCloud ? '' : (isFreeCloudModel(state.currentModel, FREE_CLOUD_MODELS)
-            ? '<div class="model-plan-note free">☁️ Free cloud model · uses free usage credits</div>'
-            : '<div class="model-plan-note paid">☁️ Paid cloud model · requires a paid plan or usage credits · <a href="https://ollama.com/settings" target="_blank" rel="noopener noreferrer">Manage</a></div>');
+            ? '<div class="model-plan-note free">☁️ Free cloud model · uses free usage credits · <a href="https://ollama.com/settings" target="_blank" rel="noopener noreferrer">Usage</a></div>'
+            : '<div class="model-plan-note paid">☁️ Paid cloud model · requires a paid plan or usage credits · <a href="https://ollama.com/settings" target="_blank" rel="noopener noreferrer">Manage</a> · <a href="https://docs.ollama.com/cloud" target="_blank" rel="noopener noreferrer">Docs</a></div>');
 
         dom.messagesArea.innerHTML = `
             <div class="empty-state">

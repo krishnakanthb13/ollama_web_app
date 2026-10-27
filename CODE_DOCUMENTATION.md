@@ -64,24 +64,33 @@ address. Insecure remote endpoints are refused rather than leaking the key.
 
 ### Model selection
 
-The model selector keeps local models separate from cloud models. Cloud models
-are further split into `FREE CLOUD MODELS` and `PAID CLOUD MODELS` using the
-`FREE_CLOUD_MODELS` list, which mirrors the seven free-tier models shown under
-usage settings on [ollama.com/settings](https://ollama.com/settings). Each
-section shows how many models it contains. Plan matching accepts both API names
-(`gemma4:31b`) and CLI aliases (`gemma4:31b-cloud`). Sorting (Default or A-Z)
-applies inside each section so the local/free/paid boundary stays visible.
+The model selector renders three separate sections in a fixed order: `FREE
+CLOUD MODELS` first (so the models everyone can try are immediately at the
+top), then `LOCAL MODELS`, then `PAID CLOUD MODELS`. Free and paid membership
+comes from the `FREE_CLOUD_MODELS` list, which mirrors the seven free-tier
+models shown under usage settings on [ollama.com/settings](https://ollama.com/settings).
+Each section shows how many models it contains, and empty sections are omitted.
+Plan matching accepts both API names (`gemma4:31b`) and CLI aliases
+(`gemma4:31b-cloud`). Sorting (Default or A-Z) applies inside each section so
+the free/local/paid boundary stays visible. Opening the dropdown always resets
+its scroll position to the top, so the free section is shown even if the last
+visit ended on the paid section.
 
 Grouping is based on the source lists (`localModels` vs `cloudModels`), never on
 the name suffix alone, so a locally pulled model that happens to share a free
 cloud name stays in the local section. When an empty chat is open, the
 placeholder repeats the selected cloud model's plan: free-tier models are marked
-as using free usage credits, while all other cloud models point to the paid plan
-or usage credits and link to the usage settings.
+as using free usage credits and link to the usage settings, while all other
+cloud models point to the paid plan or usage credits and link to both the
+settings page and the [cloud documentation](https://docs.ollama.com/cloud).
 
-The cloud list is also the catalogue cache. Existing installs are backfilled
-once with any newly introduced free models (`cloudCatalogVersion` records that
-migration), without duplicating CLI aliases such as `gpt-oss:20b-cloud`. At
+The cloud list is also the catalogue cache. Stored free-tier entries are
+rewritten to their canonical API name on load (`canonicalizeFreeCloudModels`),
+because legacy default catalogues listed some of them as `-cloud` aliases that
+collide with the local daemon's mirror of cloud models and disappear from the
+free section. Existing installs are additionally backfilled once with any newly
+introduced free models (`cloudCatalogVersion` records that migration), without
+duplicating CLI aliases such as `gpt-oss:20b-cloud`. At
 startup the app also tries `GET {cloudUrl}/tags` in the background when the
 cloud endpoint is not loopback, merging any returned model names into the cached
 list. Direct requests to `ollama.com` remain CORS-blocked, so this refresh is
@@ -132,7 +141,7 @@ so private browsing or a full quota cannot break chat.
 | | `syncDraftBadges()` | Updates the sidebar `Draft` badge without re-rendering the whole list. |
 | **Rendering** | `renderChatList()` | Renders the sidebar list of conversation history. |
 | | `renderMessages()` | Renders the transcript, including the empty-state hint and the selected cloud model's plan note. |
-| | `renderModelList()` | Renders local, free cloud and paid cloud model sections with counts, applying the search filter and sort order within each section. |
+| | `renderModelList()` | Renders free cloud, local and paid cloud model sections in that order with counts, applying the search filter and sort order within each section. |
 | | `appendMessageToUI()` | Adds a new message bubble to the chat window (supports Markdown). |
 | **Utilities** | `escapeHtml()` | Escapes all untrusted values before HTML interpolation. |
 | | `buildConversationContext()` | Keeps the newest chat turns within the 40-message / 24,000-character context budget. |
@@ -140,6 +149,7 @@ so private browsing or a full quota cannot break chat.
 | | `parseStoredArray()` / `normalizeChoice()` | Validate persisted arrays and enum-like settings before they reach app state. |
 | | `safeStorageGet()` / `parseStoredObject()` | Read localStorage without throwing and validate persisted JSON objects. |
 | | `splitCloudModelsByPlan()` / `normalizeCloudModelName()` / `isFreeCloudModel()` | Split cloud models into free and paid lists, matching API names and `-cloud`/`:cloud` aliases. |
+| | `canonicalizeFreeCloudModels()` | Rewrites stored free-tier aliases to their canonical API name so they are not hidden by the local daemon's cloud mirrors. |
 | | `mergeCloudModels()` | Merges catalogue additions without duplicating the same model under an API name and CLI alias. |
 | | `normalizeEndpointUrl()` / `canSendApiKey()` | Validates endpoint URLs and blocks API keys on insecure remote connections. |
 | | `describeFetchFailure()` | Adds local Ollama or cloud CORS guidance to network failures. |
