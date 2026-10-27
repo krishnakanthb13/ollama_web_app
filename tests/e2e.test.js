@@ -413,6 +413,54 @@ test('local models are listed without suffix filtering and duplicates are remove
     }
 });
 
+test('quality label follows the preset and think is gated by model support', async () => {
+    server.state.models = ['gpt-oss:20b', 'gemma3:4b'];
+
+    const { context, page } = await openApp(browser, port);
+
+    try {
+        assert.equal(await page.evaluate(() => state.currentModel), 'gpt-oss:20b');
+
+        await page.click('#quality-selector-btn');
+        await page.click('#quality-dropdown .model-option:has-text("High Reasoning")');
+        assert.equal((await page.textContent('#current-quality-name')).trim(), 'High');
+
+        await sendMessage(page, 'thinking model');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('from the mock.'),
+            null,
+            { timeout: 10000 }
+        );
+
+        const thinkingRequest = server.state.requests.at(-1);
+        assert.equal(thinkingRequest.model, 'gpt-oss:20b');
+        assert.equal(thinkingRequest.think, 'high');
+
+        await page.click('#model-selector-btn');
+        await page.click('#model-list .model-option:has-text("gemma3:4b")');
+        await page.waitForFunction(() => state.currentModel === 'gemma3:4b');
+        assert.equal(
+            await page.evaluate(() => getComputedStyle(document.getElementById('quality-selector-btn')).display),
+            'none',
+            'the reasoning controls should be hidden for a non-thinking model'
+        );
+
+        await page.click('#header-new-chat-btn');
+        await sendMessage(page, 'plain model');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('from the mock.'),
+            null,
+            { timeout: 10000 }
+        );
+
+        const plainRequest = server.state.requests.at(-1);
+        assert.equal(plainRequest.model, 'gemma3:4b');
+        assert.equal('think' in plainRequest, false, 'think must not be sent to unsupported models');
+    } finally {
+        await context.close();
+    }
+});
+
 test('corrupted persisted settings cannot break app startup', async () => {
     server.state.models = ['good-model:latest-cloud'];
     const { context, page, pageErrors } = await openApp(browser, port, {

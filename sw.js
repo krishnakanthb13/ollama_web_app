@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ollama-pwa-v11';
+const CACHE_NAME = 'ollama-pwa-v12';
 const ASSETS = [
     './',
     './index.html',

@@ -481,41 +481,11 @@ function closeAllDropdowns() {
     if (dom.qualityDropdown) dom.qualityDropdown.classList.remove('show');
 }
 
-function toggleSearch() {
-    state.enableSearch = !state.enableSearch;
-    localStorage.setItem('enableSearch', state.enableSearch);
-    updateHeaderControlsUI();
-}
-
-function toggleThinking() {
-    state.showThinking = !state.showThinking;
-    localStorage.setItem('showThinking', state.showThinking);
-    document.querySelectorAll('.thinking-block').forEach(el => {
-        el.classList.toggle('active', state.showThinking);
-    });
-    updateHeaderControlsUI();
-}
-
 function setQualityPreset(value) {
     state.qualityPreset = value;
     localStorage.setItem('qualityPreset', value);
     closeAllDropdowns();
     updateHeaderControlsUI();
-}
-
-function updateHeaderControlsUI() {
-    if (dom.searchBtn) {
-        dom.searchBtn.style.backgroundColor = state.enableSearch ? 'var(--accent)' : 'var(--bg-tertiary)';
-        dom.searchBtn.style.color = state.enableSearch ? 'white' : 'var(--text-secondary)';
-    }
-    if (dom.thinkingBtn) {
-        dom.thinkingBtn.style.backgroundColor = state.showThinking ? 'var(--accent)' : 'var(--bg-tertiary)';
-        dom.thinkingBtn.style.color = state.showThinking ? 'white' : 'var(--text-secondary)';
-    }
-    if (dom.currentQualityName) {
-        const labels = { 'none': 'Std', 'low': 'Low', 'medium': 'Med', 'high': 'High' };
-        dom.currentQualityName.textContent = labels[state.qualityPreset] || 'Std';
-    }
 }
 
 function setSortOrder(order) {
@@ -1025,12 +995,13 @@ async function sendMessage() {
             if (state.cloudApiKey) headers['Authorization'] = `Bearer ${state.cloudApiKey}`;
         }
 
+        const supportsThinking = getModelCapabilities(model).some((cap) => cap.type === 'thinking');
         const payload = {
             model,
             messages: history.concat({ role: 'user', content: text }),
             stream: true,
             options: { web_search: state.enableSearch },
-            think: state.qualityPreset !== 'none' ? state.qualityPreset : undefined
+            think: supportsThinking && state.qualityPreset !== 'none' ? state.qualityPreset : undefined
         };
 
         const response = await fetch(url, {
@@ -1373,11 +1344,6 @@ function toggleDropdownNS(name, force) {
     }
 }
 
-function closeAllDropdowns() {
-    if (dom.modelDropdown) dom.modelDropdown.classList.remove('show');
-    if (dom.qualityDropdown) dom.qualityDropdown.classList.remove('show');
-}
-
 // --- Capability Logic ---
 function getModelCapabilities(name) {
     const caps = [];
@@ -1424,19 +1390,22 @@ function updateHeaderControlsUI() {
     const hasThinking = caps.some(c => c.type === 'thinking');
     const hasSearch = caps.some(c => c.type === 'search');
 
-    // Display based on capabilities
-    if (dom.searchBtn) dom.searchBtn.style.display = hasSearch ? 'flex' : 'none';
-    if (dom.thinkingBtn) dom.thinkingBtn.style.display = hasThinking ? 'flex' : 'none';
-    if (dom.qualityBtn) dom.qualityBtn.style.display = hasThinking ? 'flex' : 'none';
-
-    // Active state coloring
+    // Show only the controls the selected model can actually use.
     if (dom.searchBtn) {
+        dom.searchBtn.style.display = hasSearch ? 'flex' : 'none';
         dom.searchBtn.style.backgroundColor = state.enableSearch ? 'var(--accent)' : 'var(--bg-tertiary)';
         dom.searchBtn.style.color = state.enableSearch ? 'white' : 'var(--text-secondary)';
     }
     if (dom.thinkingBtn) {
+        dom.thinkingBtn.style.display = hasThinking ? 'flex' : 'none';
         dom.thinkingBtn.style.backgroundColor = state.showThinking ? 'var(--accent)' : 'var(--bg-tertiary)';
         dom.thinkingBtn.style.color = state.showThinking ? 'white' : 'var(--text-secondary)';
+    }
+    if (dom.qualityBtn) dom.qualityBtn.style.display = hasThinking ? 'flex' : 'none';
+
+    if (dom.currentQualityName) {
+        const labels = { 'none': 'Std', 'low': 'Low', 'medium': 'Med', 'high': 'High' };
+        dom.currentQualityName.textContent = labels[state.qualityPreset] || 'Std';
     }
 }
 document.addEventListener('DOMContentLoaded', init);
