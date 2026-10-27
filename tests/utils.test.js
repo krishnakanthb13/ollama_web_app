@@ -14,6 +14,7 @@ const {
     normalizeChoice,
     normalizeSidebarWidth,
     uniqueStrings,
+    parseStoredObject,
     buildConversationContext,
     normalizeCloudModelName,
     isFreeCloudModel,
@@ -271,6 +272,18 @@ test('splitCloudModelsByPlan treats everything as paid without a free list', () 
 
     assert.deepEqual(free, []);
     assert.deepEqual(paid, ['gemma4:31b', 'glm-4.7:cloud']);
+});
+
+test('parseStoredObject accepts objects and rejects malformed or array values', () => {
+    assert.deepEqual(parseStoredObject('{"new":"hello","chat:1":"draft"}'), {
+        new: 'hello',
+        'chat:1': 'draft'
+    });
+    assert.deepEqual(parseStoredObject('[]'), {});
+    assert.deepEqual(parseStoredObject('null'), {});
+    assert.deepEqual(parseStoredObject('{broken'), {});
+    assert.deepEqual(parseStoredObject(''), {});
+    assert.deepEqual(parseStoredObject(null), {});
 });
 
 test('buildConversationContext keeps the newest messages within the limit', () => {

@@ -10,6 +10,7 @@ const {
     normalizeChoice,
     normalizeSidebarWidth,
     uniqueStrings,
+    parseStoredObject,
     buildConversationContext,
     isFreeCloudModel,
     mergeCloudModels,
@@ -219,6 +220,7 @@ const DEFAULT_CLOUD_MODELS = [
 // Bump when the default cloud catalogue changes so existing installs merge
 // newly introduced free models once instead of silently keeping stale storage.
 const CLOUD_CATALOG_VERSION = '1';
+const DRAFTS_KEY = 'drafts';
 
 function loadStoredCloudModels() {
     const stored = uniqueStrings(
@@ -287,6 +289,7 @@ async function init() {
         setSortOrder(state.sortOrder);
         await loadChatList();
         renderMessages();
+        restoreDraft();
 
         // Restore UI state
         applyFontSize(state.fontSize);
@@ -453,6 +456,7 @@ function setupEventListeners() {
         dom.textInput.addEventListener('input', () => {
             autoResizeInput.call(dom.textInput);
             if (dom.sendBtn) dom.sendBtn.disabled = state.isSending || !dom.textInput.value.trim();
+            saveDraft();
         });
     }
 
@@ -757,11 +761,14 @@ async function loadChatList() {
 function renderChatList() {
     const list = document.getElementById('chat-list');
     if (!list) return;
-    list.innerHTML = state.chats.map(chat => `
-        <div class="chat-item ${chat.id === state.currentChatId ? 'active' : ''}" onclick="loadChat(${chat.id})">
+    const drafts = readDrafts();
+    list.innerHTML = state.chats.map(chat => {
+        const hasDraft = Boolean(drafts[`chat:${chat.id}`]);
+        return `
+        <div class="chat-item ${chat.id === state.currentChatId ? 'active' : ''}" data-chat-id="${chat.id}" onclick="loadChat(${chat.id})">
             <div class="chat-item-content">
                 <div class="chat-item-title">${escapeHtml(chat.title || 'Untitled chat')}</div>
-                <div class="chat-item-date">${chat.model ? escapeHtml(chat.model) + ' • ' : ''}${new Date(chat.updated_at).toLocaleDateString()}</div>
+                <div class="chat-item-date">${chat.model ? escapeHtml(chat.model) + ' • ' : ''}${new Date(chat.updated_at).toLocaleDateString()}${hasDraft ? '<span class="chat-draft">Draft</span>' : ''}</div>
             </div>
             <div style="display:flex; opacity:0; transition: opacity 0.2s;" class="chat-actions">
                 <button class="download-chat-btn" onclick="exportChatToMarkdown(event, ${chat.id})" title="Download as Markdown">
@@ -772,7 +779,94 @@ function renderChatList() {
                 </button>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
+}
+
+// --- Drafts ---------------------------------------------------------------
+// Unsent text is stored per scope: `new` for an unsent conversation and
+// `chat:<id>` afterwards, so switching conversations never moves a draft.
+function readDrafts() {
+    const parsed = parseStoredObject(safeStorageGet(DRAFTS_KEY));
+    const drafts = {};
+    for (const [scope, value] of Object.entries(parsed)) {
+        if (typeof value === 'string' && value.trim()) drafts[scope] = value;
+    }
+    return drafts;
+}
+
+function writeDrafts(drafts) {
+    try {
+        localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+    } catch (error) {
+        // Drafts are best-effort; private mode or a full quota must not break chat.
+    }
+}
+
+function draftScope() {
+    return state.currentChatId ? `chat:${state.currentChatId}` : 'new';
+}
+
+function saveDraft() {
+    if (!dom.textInput) return;
+    const scope = draftScope();
+    const drafts = readDrafts();
+    const had = Boolean(drafts[scope]);
+    const has = Boolean(dom.textInput.value.trim());
+
+    if (has) drafts[scope] = dom.textInput.value;
+    else delete drafts[scope];
+
+    writeDrafts(drafts);
+    if (had !== has) syncDraftBadges();
+}
+
+function restoreDraft() {
+    if (!dom.textInput) return;
+    dom.textInput.value = readDrafts()[draftScope()] || '';
+    autoResizeInput.call(dom.textInput);
+    if (dom.sendBtn) dom.sendBtn.disabled = state.isSending || !dom.textInput.value.trim();
+}
+
+function clearDraft(scope = draftScope()) {
+    const drafts = readDrafts();
+    if (!(scope in drafts)) return;
+    delete drafts[scope];
+    writeDrafts(drafts);
+    syncDraftBadges();
+}
+
+// The first send promotes the unsaved `new` scope to the real chat id. Text
+// typed while the reply starts has to follow that id.
+function adoptDraftScope(id) {
+    const drafts = readDrafts();
+    delete drafts.new;
+    const text = dom.textInput?.value || '';
+    if (text.trim()) drafts[`chat:${id}`] = text;
+    else delete drafts[`chat:${id}`];
+    writeDrafts(drafts);
+    syncDraftBadges();
+}
+
+function syncDraftBadges() {
+    const list = document.getElementById('chat-list');
+    if (!list) return;
+    const drafts = readDrafts();
+
+    list.querySelectorAll('.chat-item').forEach((item) => {
+        const id = Number(item.dataset.chatId);
+        const hasDraft = Boolean(id && drafts[`chat:${id}`]);
+        const badge = item.querySelector('.chat-draft');
+
+        if (hasDraft && !badge) {
+            const label = document.createElement('span');
+            label.className = 'chat-draft';
+            label.textContent = 'Draft';
+            (item.querySelector('.chat-item-date') || item).appendChild(label);
+        } else if (!hasDraft && badge) {
+            badge.remove();
+        }
+    });
 }
 
 window.deleteChat = async (e, id) => {
@@ -785,10 +879,12 @@ window.deleteChat = async (e, id) => {
     }
 
     await dbApp.deleteChat(id);
+    clearDraft(`chat:${id}`);
     if (state.currentChatId === id) {
         state.currentChatId = null;
         state.messages = [];
         renderMessages();
+        restoreDraft();
     }
     await loadChatList();
 };
@@ -831,6 +927,7 @@ window.loadChat = async (id) => {
     }
 
     // Wait for any in-flight answer to be persisted before swapping chats.
+    saveDraft();
     await cancelActiveRequest('navigation');
     setSendingUi(false);
 
@@ -838,17 +935,20 @@ window.loadChat = async (id) => {
     state.messages = await dbApp.getMessages(id);
     // Removed setModel override to keep model selection persistent globally
     renderMessages();
+    restoreDraft();
     toggleSidebar(false);
     renderChatList();
 };
 
 async function createNewChat() {
+    saveDraft();
     await cancelActiveRequest('navigation');
     setSendingUi(false);
 
     state.currentChatId = null;
     state.messages = [];
     renderMessages();
+    restoreDraft();
     toggleSidebar(false);
     renderChatList();
     if (dom.textInput) dom.textInput.focus();
@@ -1049,6 +1149,14 @@ async function sendMessage() {
     const isLocal = state.localModels.includes(model);
     const history = buildConversationContext(state.messages);
     const request = requestRegistry.start({ model, chatId: state.currentChatId });
+
+    // The prompt is now owned by the message list, so consume its draft and
+    // clear the composer. Anything typed while the reply starts is a new draft.
+    clearDraft(draftScope());
+    if (dom.textInput) {
+        dom.textInput.value = '';
+        autoResizeInput.call(dom.textInput);
+    }
     setSendingUi(true);
 
     let chatId = state.currentChatId;
@@ -1075,6 +1183,7 @@ async function sendMessage() {
             chatId = chat.id;
             state.currentChatId = chat.id;
             request.chatId = chat.id;
+            adoptDraftScope(chat.id);
             await loadChatList();
         } else {
             request.chatId = chatId;
@@ -1091,10 +1200,6 @@ async function sendMessage() {
             state.messages.push(userEntry);
             appendMessageToUI(userEntry);
         }
-
-        dom.textInput.value = '';
-        autoResizeInput.call(dom.textInput);
-        if (dom.sendBtn) dom.sendBtn.disabled = true;
 
         msgDiv = document.createElement('div');
         msgDiv.className = 'message assistant-msg';

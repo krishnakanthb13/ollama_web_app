@@ -290,6 +290,26 @@
     }
 
     /**
+     * Parse a JSON object from storage. Malformed values, arrays and null fall
+     * back to an empty object so optional feature state cannot break startup.
+     *
+     * @param {unknown} raw
+     * @returns {Record<string, unknown>}
+     */
+    function parseStoredObject(raw) {
+        if (typeof raw !== 'string' || raw.trim() === '') return {};
+
+        let parsed;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (error) {
+            return {};
+        }
+
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    }
+
+    /**
      * Build the message history sent to Ollama, keeping the newest messages
      * within a message and character budget. The latest message is always kept
      * even when it alone exceeds the character limit.
@@ -497,6 +517,7 @@
         normalizeChoice,
         normalizeSidebarWidth,
         uniqueStrings,
+        parseStoredObject,
         buildConversationContext,
         normalizeCloudModelName,
         isFreeCloudModel,

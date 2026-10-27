@@ -435,6 +435,20 @@ aside {
   margin-top: 4px;
 }
 
+.chat-draft {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent-hover);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
 .settings-btn-sidebar {
   background-color: var(--bg-tertiary);
   border: 1px solid var(--border);

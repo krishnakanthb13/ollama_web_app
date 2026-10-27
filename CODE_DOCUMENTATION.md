@@ -72,6 +72,16 @@ always included even if it alone exceeds the character budget. This keeps long
 conversations from producing oversized requests while preserving the most
 relevant recent turns.
 
+### Draft autosave
+
+Unsent composer text is saved as you type and restored when you return to the
+same conversation. Drafts live in one `localStorage` map keyed by scope: `new`
+for a conversation that has not been sent yet, and `chat:<id>` once it exists.
+The first send moves any text typed during chat creation from `new` to the new
+chat's scope, and sending clears only the active draft. Chats that still have an
+unsent draft show a `Draft` badge in the sidebar. Storage failures are ignored
+so private browsing or a full quota cannot break chat.
+
 ## Core Modules & Functions (`js/app.js`)
 
 | Module / Class | Function | Description |
@@ -87,6 +97,9 @@ relevant recent turns.
 | | `loadStoredCloudModels()` / `refreshCloudModels()` | Backfills the free-tier catalogue once and refreshes the cached cloud list from a reachable `/tags` endpoint. |
 | **Chat Logic** | `sendMessage()` | Handles user input, updates UI, calls Ollama API, streams the response, and persists a partial answer when a request is stopped or interrupted. |
 | | `stopGeneration()` | Cancels the active request; the partial answer is saved with an `interrupted` status. |
+| **Drafts** | `saveDraft()` / `restoreDraft()` | Persists the composer per conversation scope and restores it on chat load, new chat and startup. |
+| | `clearDraft()` / `adoptDraftScope()` | Clears only the active draft after sending and moves a `new` draft to the chat id created by the first send. |
+| | `syncDraftBadges()` | Updates the sidebar `Draft` badge without re-rendering the whole list. |
 | **Rendering** | `renderChatList()` | Renders the sidebar list of conversation history. |
 | | `renderMessages()` | Renders the transcript, including the empty-state hint and the selected cloud model's plan note. |
 | | `renderModelList()` | Renders local, free cloud and paid cloud model sections with counts, applying the search filter and sort order within each section. |
@@ -95,7 +108,7 @@ relevant recent turns.
 | | `buildConversationContext()` | Keeps the newest chat turns within the 40-message / 24,000-character context budget. |
 | | `createNdjsonParser()` | Buffers split stream lines, flushes the final line, and reports `done`/`error` payloads. |
 | | `parseStoredArray()` / `normalizeChoice()` | Validate persisted arrays and enum-like settings before they reach app state. |
-| | `safeStorageGet()` | Reads localStorage without throwing when storage is blocked. |
+| | `safeStorageGet()` / `parseStoredObject()` | Read localStorage without throwing and validate persisted JSON objects. |
 | | `splitCloudModelsByPlan()` / `normalizeCloudModelName()` / `isFreeCloudModel()` | Split cloud models into free and paid lists, matching API names and `-cloud`/`:cloud` aliases. |
 | | `mergeCloudModels()` | Merges catalogue additions without duplicating the same model under an API name and CLI alias. |
 | | `normalizeEndpointUrl()` / `canSendApiKey()` | Validates endpoint URLs and blocks API keys on insecure remote connections. |

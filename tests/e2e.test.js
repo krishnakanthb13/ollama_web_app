@@ -667,6 +667,94 @@ test('the non-functional web-search control and payload are removed', async () =
     }
 });
 
+test('unsent drafts follow their conversation and survive reloads', async () => {
+    server.state.models = ['gpt-oss:20b'];
+
+    const { context, page } = await openApp(browser, port);
+
+    const waitForReply = async () => {
+        const before = await page.evaluate(
+            () => state.messages.filter((message) => message.role === 'assistant').length
+        );
+        await page.waitForFunction(
+            (count) => !state.isSending
+                && state.messages.filter((message) => message.role === 'assistant').length > count,
+            before,
+            { timeout: 10000 }
+        );
+    };
+
+    try {
+        await sendMessage(page, 'alpha');
+        await waitForReply();
+
+        await page.click('#header-new-chat-btn');
+        await sendMessage(page, 'beta');
+        await waitForReply();
+
+        await page.click('#chat-list .chat-item:has-text("alpha")');
+        await page.fill('#user-input', 'draft alpha');
+
+        await page.click('#chat-list .chat-item:has-text("beta")');
+        await page.waitForFunction(() => document.getElementById('user-input').value === '');
+        await page.fill('#user-input', 'draft beta');
+
+        await page.click('#header-new-chat-btn');
+        await page.waitForFunction(() => document.getElementById('user-input').value === '');
+        await page.fill('#user-input', 'draft new');
+
+        await page.click('#chat-list .chat-item:has-text("alpha")');
+        await page.waitForFunction(
+            () => document.getElementById('user-input').value === 'draft alpha'
+        );
+        assert.ok(
+            await page.$('#chat-list .chat-item:has-text("alpha") .chat-draft'),
+            'the chat with a draft should show a badge'
+        );
+
+        await page.click('#chat-list .chat-item:has-text("beta")');
+        await page.waitForFunction(
+            () => document.getElementById('user-input').value === 'draft beta'
+        );
+
+        await page.click('#header-new-chat-btn');
+        await page.waitForFunction(
+            () => document.getElementById('user-input').value === 'draft new'
+        );
+
+        await page.click('#chat-list .chat-item:has-text("beta")');
+        await page.waitForFunction(
+            () => document.getElementById('user-input').value === 'draft beta'
+        );
+        await sendMessage(page, 'draft beta');
+        await waitForReply();
+
+        assert.equal(
+            await page.$('#chat-list .chat-item:has-text("beta") .chat-draft'),
+            null,
+            'sending should consume only the active draft'
+        );
+        assert.ok(
+            await page.$('#chat-list .chat-item:has-text("alpha") .chat-draft'),
+            'other conversation drafts should remain'
+        );
+
+        await page.reload();
+        await page.waitForFunction(
+            () => document.querySelectorAll('#model-list .model-option').length > 0
+                && document.getElementById('sidebar').style.width !== ''
+        );
+        assert.equal(await page.inputValue('#user-input'), 'draft new');
+
+        await page.click('#chat-list .chat-item:has-text("alpha")');
+        await page.waitForFunction(
+            () => document.getElementById('user-input').value === 'draft alpha'
+        );
+    } finally {
+        await context.close();
+    }
+});
+
 test('long chats send only the newest context within the budget', async () => {
     server.state.models = ['gpt-oss:20b'];
 
