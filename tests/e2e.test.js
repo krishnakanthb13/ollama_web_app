@@ -367,3 +367,53 @@ test('an error payload stops the stream, shows the error and keeps the partial a
         await context.close();
     }
 });
+
+test('corrupted persisted settings cannot break app startup', async () => {
+    server.state.models = ['good-model:latest-cloud'];
+    const { context, page, pageErrors } = await openApp(browser, port, {
+        hiddenModels: '{not-json',
+        cloudModels: '"not-an-array"',
+        qualityPreset: 'ultra',
+        sortOrder: 'sideways',
+        fontSize: 'gigantic',
+        sidebarWidth: 'calc(100vw)'
+    });
+
+    try {
+        assert.equal(pageErrors.length, 0);
+
+        const names = await page.$$eval('#model-list .model-option .model-name', (elements) =>
+            elements.map((element) => element.textContent)
+        );
+        assert.ok(names.includes('good-model:latest-cloud'), 'the malformed hidden list should fall back to empty');
+
+        const validated = await page.evaluate(() => ({
+            qualityPreset: state.qualityPreset,
+            sortOrder: state.sortOrder,
+            fontSize: state.fontSize,
+            sidebarWidth: state.sidebarWidth,
+            hiddenModels: state.hiddenModels,
+            cloudModels: state.cloudModels.length
+        }));
+
+        assert.equal(validated.qualityPreset, 'none');
+        assert.equal(validated.sortOrder, 'default');
+        assert.equal(validated.fontSize, 'medium');
+        assert.equal(validated.sidebarWidth, '280px');
+        assert.deepEqual(validated.hiddenModels, []);
+        assert.ok(validated.cloudModels > 0, 'default cloud models should be restored');
+
+        assert.equal(await page.evaluate(() => document.getElementById('sidebar').style.width), '280px');
+        assert.equal(
+            await page.evaluate(() => getComputedStyle(document.documentElement).fontSize),
+            '15px'
+        );
+
+        await page.click('#settings-btn-sidebar');
+        await page.waitForSelector('#settings-panel.active');
+        const cloudCount = await page.$$eval('#cloud-model-list .model-list-item', (items) => items.length);
+        assert.ok(cloudCount > 0);
+    } finally {
+        await context.close();
+    }
+});

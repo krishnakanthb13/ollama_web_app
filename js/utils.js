@@ -180,11 +180,87 @@
         };
     }
 
+    /**
+     * Read a localStorage value without throwing when storage is unavailable.
+     *
+     * @param {string} key
+     * @param {string | null} [fallback]
+     * @returns {string | null}
+     */
+    function safeStorageGet(key, fallback = null) {
+        try {
+            const storage = globalThis.localStorage;
+            if (!storage) return fallback;
+            const value = storage.getItem(key);
+            return value === null || value === undefined ? fallback : value;
+        } catch (error) {
+            return fallback;
+        }
+    }
+
+    /**
+     * Parse a JSON array of strings from storage. Malformed JSON, non-arrays and
+     * non-string entries fall back safely instead of crashing app startup.
+     *
+     * @param {unknown} raw
+     * @param {string[]} [fallback]
+     * @returns {string[]}
+     */
+    function parseStoredArray(raw, fallback = []) {
+        const fallbackCopy = Array.isArray(fallback) ? fallback.slice() : [];
+        if (typeof raw !== 'string' || raw.trim() === '') return fallbackCopy;
+
+        let parsed;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (error) {
+            return fallbackCopy;
+        }
+
+        if (!Array.isArray(parsed)) return fallbackCopy;
+
+        return parsed
+            .filter((item) => typeof item === 'string')
+            .map((item) => item.trim())
+            .filter((item) => item.length > 0);
+    }
+
+    /**
+     * Return `value` when it is one of the allowed options, otherwise `fallback`.
+     *
+     * @param {unknown} value
+     * @param {string[]} allowed
+     * @param {string} fallback
+     * @returns {string}
+     */
+    function normalizeChoice(value, allowed, fallback) {
+        return Array.isArray(allowed) && allowed.includes(value) ? value : fallback;
+    }
+
+    /**
+     * Keep a persisted sidebar width inside a sane pixel range.
+     *
+     * @param {unknown} value
+     * @param {string} [fallback]
+     * @returns {string}
+     */
+    function normalizeSidebarWidth(value, fallback = '280px') {
+        const match = /^(\d{3,4})px$/.exec(String(value ?? '').trim());
+        if (!match) return fallback;
+
+        const width = Number(match[1]);
+        return width >= 200 && width <= 2000 ? `${width}px` : fallback;
+    }
+
     return {
         escapeHtml,
         scrollElementToBottom,
         buildChatTitle,
         createRequestRegistry,
-        createNdjsonParser
+        createNdjsonParser,
+        safeStorageGet,
+        parseStoredArray,
+        normalizeChoice,
+        normalizeSidebarWidth
     };
 });

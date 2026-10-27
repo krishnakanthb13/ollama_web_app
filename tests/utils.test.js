@@ -8,7 +8,11 @@ const {
     scrollElementToBottom,
     buildChatTitle,
     createRequestRegistry,
-    createNdjsonParser
+    createNdjsonParser,
+    safeStorageGet,
+    parseStoredArray,
+    normalizeChoice,
+    normalizeSidebarWidth
 } = require('../js/utils.js');
 
 test('escapeHtml escapes HTML metacharacters', () => {
@@ -141,4 +145,61 @@ test('NDJSON parser skips blank lines and treats malformed lines as non-fatal', 
     assert.match(events[0].error, /Malformed JSON/);
     assert.equal(events[1].thinking, 'hmm');
     assert.equal(parser.sawDone, false);
+});
+
+test('parseStoredArray keeps string entries and trims them', () => {
+    assert.deepEqual(
+        parseStoredArray('["alpha", " beta ", 3, null, {}, ""]', []),
+        ['alpha', 'beta']
+    );
+});
+
+test('parseStoredArray falls back for malformed or non-array values', () => {
+    assert.deepEqual(parseStoredArray('{not json', ['fallback']), ['fallback']);
+    assert.deepEqual(parseStoredArray('{"a":1}', ['fallback']), ['fallback']);
+    assert.deepEqual(parseStoredArray(null, ['fallback']), ['fallback']);
+    assert.deepEqual(parseStoredArray('', ['fallback']), ['fallback']);
+    assert.deepEqual(parseStoredArray('[]', ['fallback']), [], 'an explicit empty list is preserved');
+});
+
+test('parseStoredArray does not mutate the fallback array', () => {
+    const fallback = ['alpha'];
+    const result = parseStoredArray('broken', fallback);
+
+    result.push('beta');
+    assert.deepEqual(fallback, ['alpha']);
+});
+
+test('normalizeChoice accepts allowed values and rejects the rest', () => {
+    assert.equal(normalizeChoice('medium', ['small', 'medium'], 'small'), 'medium');
+    assert.equal(normalizeChoice('huge', ['small', 'medium'], 'small'), 'small');
+    assert.equal(normalizeChoice(null, ['small'], 'small'), 'small');
+});
+
+test('normalizeSidebarWidth accepts sane pixel values only', () => {
+    assert.equal(normalizeSidebarWidth('320px'), '320px');
+    assert.equal(normalizeSidebarWidth('  440px '), '440px');
+    assert.equal(normalizeSidebarWidth('10px'), '280px');
+    assert.equal(normalizeSidebarWidth('9000px'), '280px');
+    assert.equal(normalizeSidebarWidth('calc(100vw)'), '280px');
+    assert.equal(normalizeSidebarWidth(null), '280px');
+});
+
+test('safeStorageGet reads values and survives unavailable storage', () => {
+    const original = globalThis.localStorage;
+
+    globalThis.localStorage = {
+        getItem(key) {
+            if (key === 'throws') throw new Error('storage blocked');
+            return key === 'present' ? 'value' : null;
+        }
+    };
+
+    try {
+        assert.equal(safeStorageGet('present', 'fallback'), 'value');
+        assert.equal(safeStorageGet('missing', 'fallback'), 'fallback');
+        assert.equal(safeStorageGet('throws', 'fallback'), 'fallback');
+    } finally {
+        globalThis.localStorage = original;
+    }
 });

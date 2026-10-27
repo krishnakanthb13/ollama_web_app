@@ -37,6 +37,8 @@ The Ollama Web App follows a **client-side only** architecture (Single Page Appl
 | | `appendMessageToUI()` | Adds a new message bubble to the chat window (supports Markdown). |
 | **Utilities** | `escapeHtml()` | Escapes all untrusted values before HTML interpolation. |
 | | `createNdjsonParser()` | Buffers split stream lines, flushes the final line, and reports `done`/`error` payloads. |
+| | `parseStoredArray()` / `normalizeChoice()` | Validate persisted arrays and enum-like settings before they reach app state. |
+| | `safeStorageGet()` | Reads localStorage without throwing when storage is blocked. |
 | **Settings** | `openSettings()` | Toggles the settings panel. |
 | | `toggleCloudList()` | Expands/collapses the cloud model configuration section. |
 

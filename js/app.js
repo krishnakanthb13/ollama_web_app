@@ -4,7 +4,11 @@ const {
     scrollElementToBottom,
     buildChatTitle,
     createRequestRegistry,
-    createNdjsonParser
+    createNdjsonParser,
+    safeStorageGet,
+    parseStoredArray,
+    normalizeChoice,
+    normalizeSidebarWidth
 } = window.AppUtils;
 const requestRegistry = createRequestRegistry();
 const REQUEST_IDLE_TIMEOUT_MS = 60000;
@@ -190,30 +194,30 @@ const DEFAULT_CLOUD_MODELS = [
 // --- State ---
 const state = {
     currentChatId: null,
-    currentModel: localStorage.getItem('lastModel') || '',
+    currentModel: safeStorageGet('lastModel', ''),
     chats: [],
     messages: [],
     isSidebarOpen: false,
     isSending: false,
 
     // Configuration
-    localUrl: localStorage.getItem('localUrl') || DEFAULT_LOCAL_URL,
-    cloudUrl: localStorage.getItem('cloudUrl') || DEFAULT_CLOUD_URL,
-    cloudApiKey: localStorage.getItem('cloudApiKey') || '',
+    localUrl: safeStorageGet('localUrl') || DEFAULT_LOCAL_URL,
+    cloudUrl: safeStorageGet('cloudUrl') || DEFAULT_CLOUD_URL,
+    cloudApiKey: safeStorageGet('cloudApiKey', ''),
 
     // Models
     localModels: [],
-    hiddenModels: JSON.parse(localStorage.getItem('hiddenModels') || '[]'),
-    cloudModels: JSON.parse(localStorage.getItem('cloudModels') || JSON.stringify(DEFAULT_CLOUD_MODELS)),
+    hiddenModels: parseStoredArray(safeStorageGet('hiddenModels'), []),
+    cloudModels: parseStoredArray(safeStorageGet('cloudModels'), DEFAULT_CLOUD_MODELS),
     modelSearchQuery: '',
 
     // Settings / Toggles
-    showThinking: localStorage.getItem('showThinking') === 'true',
-    enableSearch: localStorage.getItem('enableSearch') === 'true',
-    qualityPreset: localStorage.getItem('qualityPreset') || 'none',
-    sortOrder: localStorage.getItem('sortOrder') || 'default', // 'default' or 'az'
-    fontSize: localStorage.getItem('fontSize') || 'medium',
-    sidebarWidth: localStorage.getItem('sidebarWidth') || '280px'
+    showThinking: safeStorageGet('showThinking') === 'true',
+    enableSearch: safeStorageGet('enableSearch') === 'true',
+    qualityPreset: normalizeChoice(safeStorageGet('qualityPreset'), ['none', 'low', 'medium', 'high'], 'none'),
+    sortOrder: normalizeChoice(safeStorageGet('sortOrder'), ['default', 'az'], 'default'),
+    fontSize: normalizeChoice(safeStorageGet('fontSize'), ['small', 'medium', 'large'], 'medium'),
+    sidebarWidth: normalizeSidebarWidth(safeStorageGet('sidebarWidth'), '280px')
 };
 
 // --- DOM Elements ---
