@@ -252,6 +252,30 @@
         return width >= 200 && width <= 2000 ? `${width}px` : fallback;
     }
 
+    /**
+     * Return the unique, trimmed, non-empty strings from a list while keeping
+     * the original order.
+     *
+     * @param {unknown} values
+     * @returns {string[]}
+     */
+    function uniqueStrings(values) {
+        if (!Array.isArray(values)) return [];
+
+        const seen = new Set();
+        const result = [];
+
+        for (const value of values) {
+            if (typeof value !== 'string') continue;
+            const trimmed = value.trim();
+            if (!trimmed || seen.has(trimmed)) continue;
+            seen.add(trimmed);
+            result.push(trimmed);
+        }
+
+        return result;
+    }
+
     return {
         escapeHtml,
         scrollElementToBottom,
@@ -261,6 +285,7 @@
         safeStorageGet,
         parseStoredArray,
         normalizeChoice,
-        normalizeSidebarWidth
+        normalizeSidebarWidth,
+        uniqueStrings
     };
 });

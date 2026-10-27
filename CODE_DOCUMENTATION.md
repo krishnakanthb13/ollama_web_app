@@ -30,6 +30,7 @@ The Ollama Web App follows a **client-side only** architecture (Single Page Appl
 | | `getChat(id)` | Retrieves a specific chat thread. |
 | | `addMessage()` | Saves a user or assistant message to the database. |
 | **State** | `state` object | Holds global app state (`currentChatId`, `models`, `settings`). |
+| | `validateCurrentModel()` | Falls back to the first available model when the stored selection no longer exists. |
 | **Initialization** | `init()` | Bootstraps the app: binds DOM, loads models, restores settings. |
 | **Chat Logic** | `sendMessage()` | Handles user input, updates UI, calls Ollama API, streams the response, and persists a partial answer when a request is stopped or interrupted. |
 | | `stopGeneration()` | Cancels the active request; the partial answer is saved with an `interrupted` status. |

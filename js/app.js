@@ -8,7 +8,8 @@ const {
     safeStorageGet,
     parseStoredArray,
     normalizeChoice,
-    normalizeSidebarWidth
+    normalizeSidebarWidth,
+    uniqueStrings
 } = window.AppUtils;
 const requestRegistry = createRequestRegistry();
 const REQUEST_IDLE_TIMEOUT_MS = 60000;
@@ -207,8 +208,8 @@ const state = {
 
     // Models
     localModels: [],
-    hiddenModels: parseStoredArray(safeStorageGet('hiddenModels'), []),
-    cloudModels: parseStoredArray(safeStorageGet('cloudModels'), DEFAULT_CLOUD_MODELS),
+    hiddenModels: uniqueStrings(parseStoredArray(safeStorageGet('hiddenModels'), [])),
+    cloudModels: uniqueStrings(parseStoredArray(safeStorageGet('cloudModels'), DEFAULT_CLOUD_MODELS)),
     modelSearchQuery: '',
 
     // Settings / Toggles
@@ -535,20 +536,32 @@ async function loadModels() {
         clearTimeout(id);
         if (res.ok) {
             const data = await res.json();
-            // Filter: Only use models ending with 'cloud' as requested
-            state.localModels = data.models
-                .map(m => m.name)
-                .filter(name => name.toLowerCase().endsWith('cloud'));
+            // `/api/tags` lists locally reachable models; keep every valid name.
+            state.localModels = uniqueStrings((data.models || []).map((model) => model?.name));
         }
     } catch (e) { /* ignore */ }
 
+    validateCurrentModel();
     renderModelList();
-    if (!state.currentModel && (state.localModels.length > 0 || state.cloudModels.length > 0)) {
-        setModel(state.localModels[0] || state.cloudModels[0]);
-    } else if (state.currentModel) {
-        if (dom.currentModelName) dom.currentModelName.textContent = state.currentModel;
+}
+
+function validateCurrentModel() {
+    const available = uniqueStrings([...state.localModels, ...state.cloudModels]);
+
+    if (available.length === 0) {
+        state.currentModel = '';
+        if (dom.currentModelName) dom.currentModelName.textContent = 'Select Model...';
         updateHeaderControlsUI();
+        return;
     }
+
+    if (!available.includes(state.currentModel)) {
+        state.currentModel = available[0];
+        localStorage.setItem('lastModel', state.currentModel);
+    }
+
+    if (dom.currentModelName) dom.currentModelName.textContent = state.currentModel;
+    updateHeaderControlsUI();
 }
 
 function renderModelList() {
@@ -586,8 +599,11 @@ function renderModelList() {
         return div;
     };
 
-    let allLocal = [...state.localModels].map(m => ({ name: m, type: 'Local' }));
-    let allCloud = [...state.cloudModels].map(m => ({ name: m, type: 'Cloud' }));
+    let allLocal = uniqueStrings(state.localModels).map(m => ({ name: m, type: 'Local' }));
+    const localNames = new Set(allLocal.map((model) => model.name));
+    let allCloud = uniqueStrings(state.cloudModels)
+        .filter((name) => !localNames.has(name))
+        .map(m => ({ name: m, type: 'Cloud' }));
 
     // FILTERING logic
     if (state.modelSearchQuery) {
@@ -638,10 +654,14 @@ function renderModelList() {
 }
 
 function setModel(name) {
-    state.currentModel = name;
-    localStorage.setItem('lastModel', name);
+    if (typeof name !== 'string') return;
+    const modelName = name.trim();
+    if (!modelName) return;
+
+    state.currentModel = modelName;
+    localStorage.setItem('lastModel', modelName);
     // Update UI headers
-    if (dom.currentModelName) dom.currentModelName.textContent = name;
+    if (dom.currentModelName) dom.currentModelName.textContent = modelName;
     updateHeaderControlsUI();
 
     // Re-render list to show selection

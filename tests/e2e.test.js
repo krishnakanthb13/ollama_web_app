@@ -368,6 +368,51 @@ test('an error payload stops the stream, shows the error and keeps the partial a
     }
 });
 
+test('local models are listed without suffix filtering and duplicates are removed', async () => {
+    server.state.models = [
+        'llama3.1:8b',
+        'remote-only:cloud',
+        'llama3.1:8b',
+        '   '
+    ];
+
+    const { context, page } = await openApp(browser, port, {
+        cloudModels: JSON.stringify(['llama3.1:8b', 'remote-only:cloud', 'remote-only:cloud']),
+        lastModel: 'removed-model:latest'
+    });
+
+    try {
+        assert.deepEqual(
+            await page.evaluate(() => state.localModels),
+            ['llama3.1:8b', 'remote-only:cloud'],
+            'every valid model from /api/tags should be kept'
+        );
+        assert.deepEqual(
+            await page.evaluate(() => state.cloudModels),
+            ['llama3.1:8b', 'remote-only:cloud'],
+            'stored cloud models should be deduplicated'
+        );
+
+        const names = await page.$$eval('#model-list .model-option .model-name', (elements) =>
+            elements.map((element) => element.textContent)
+        );
+        assert.deepEqual(names, ['llama3.1:8b', 'remote-only:cloud']);
+
+        assert.equal(await page.evaluate(() => state.currentModel), 'llama3.1:8b');
+        assert.equal((await page.textContent('#current-model-name')).trim(), 'llama3.1:8b');
+        assert.equal(await page.evaluate(() => localStorage.getItem('lastModel')), 'llama3.1:8b');
+
+        await sendMessage(page, 'local model');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('from the mock.'),
+            null,
+            { timeout: 10000 }
+        );
+    } finally {
+        await context.close();
+    }
+});
+
 test('corrupted persisted settings cannot break app startup', async () => {
     server.state.models = ['good-model:latest-cloud'];
     const { context, page, pageErrors } = await openApp(browser, port, {

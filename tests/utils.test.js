@@ -12,7 +12,8 @@ const {
     safeStorageGet,
     parseStoredArray,
     normalizeChoice,
-    normalizeSidebarWidth
+    normalizeSidebarWidth,
+    uniqueStrings
 } = require('../js/utils.js');
 
 test('escapeHtml escapes HTML metacharacters', () => {
@@ -183,6 +184,15 @@ test('normalizeSidebarWidth accepts sane pixel values only', () => {
     assert.equal(normalizeSidebarWidth('9000px'), '280px');
     assert.equal(normalizeSidebarWidth('calc(100vw)'), '280px');
     assert.equal(normalizeSidebarWidth(null), '280px');
+});
+
+test('uniqueStrings trims, filters and deduplicates while preserving order', () => {
+    assert.deepEqual(
+        uniqueStrings(['llama3.1:8b', ' llama3.1:8b ', '', null, 42, 'qwen3:8b']),
+        ['llama3.1:8b', 'qwen3:8b']
+    );
+    assert.deepEqual(uniqueStrings('not-an-array'), []);
+    assert.deepEqual(uniqueStrings(null), []);
 });
 
 test('safeStorageGet reads values and survives unavailable storage', () => {
