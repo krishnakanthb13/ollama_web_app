@@ -214,7 +214,6 @@ const state = {
 
     // Settings / Toggles
     showThinking: safeStorageGet('showThinking') === 'true',
-    enableSearch: safeStorageGet('enableSearch') === 'true',
     qualityPreset: normalizeChoice(safeStorageGet('qualityPreset'), ['none', 'low', 'medium', 'high'], 'none'),
     sortOrder: normalizeChoice(safeStorageGet('sortOrder'), ['default', 'az'], 'default'),
     fontSize: normalizeChoice(safeStorageGet('fontSize'), ['small', 'medium', 'large'], 'medium'),
@@ -268,7 +267,6 @@ function bindDomElements() {
     dom.headerNewChatBtn = document.getElementById('header-new-chat-btn');
 
     // Header controls
-    dom.searchBtn = document.getElementById('search-btn');
     dom.thinkingBtn = document.getElementById('thinking-btn');
 
     // NEW Dropdowns
@@ -324,7 +322,6 @@ function setupEventListeners() {
     dom.headerNewChatBtn?.addEventListener('click', createNewChat);
 
     // Header Controls
-    dom.searchBtn?.addEventListener('click', toggleSearch);
     dom.thinkingBtn?.addEventListener('click', toggleThinking);
 
     // Dropdown Toggles
@@ -1000,7 +997,6 @@ async function sendMessage() {
             model,
             messages: history.concat({ role: 'user', content: text }),
             stream: true,
-            options: { web_search: state.enableSearch },
             think: supportsThinking && state.qualityPreset !== 'none' ? state.qualityPreset : undefined
         };
 
@@ -1306,12 +1302,6 @@ function applyFontSize(size) {
 }
 
 // --- Helper Toggles ---
-function toggleSearch() {
-    state.enableSearch = !state.enableSearch;
-    localStorage.setItem('enableSearch', state.enableSearch);
-    updateHeaderControlsUI();
-}
-
 function toggleThinking() {
     state.showThinking = !state.showThinking;
     localStorage.setItem('showThinking', state.showThinking);
@@ -1361,21 +1351,14 @@ function getModelCapabilities(name) {
         }
     }
 
-    // 2. Web Search Support (🌐)
-    // Keywords from user: gpt, deepseek 3.1, deepseek 3.2, qwen 3, qwen3
-    const searchKeywords = ['gpt', 'deepseek 3.1', 'deepseek 3.2', 'qwen 3', 'qwen3'];
-    if (searchKeywords.some(kw => lower.includes(kw))) {
-        caps.push({ type: 'search', icon: '🌐', label: 'Search' });
-    }
-
-    // 3. Tools Support (🛠️) - Modern generic models (Filtered by user 'none' list)
+    // 2. Tools Support (🛠️) - Modern generic models (Filtered by user 'none' list)
     const toolKeywords = ['llama3', 'mistral'];
     const toolNone = ['ministral', 'mistral large'].some(kw => lower.includes(kw));
     if (toolKeywords.some(kw => lower.includes(kw)) && !toolNone) {
         caps.push({ type: 'tools', icon: '🛠️', label: 'Tools' });
     }
 
-    // 4. Size / Power (🏋️ vs ⚡)
+    // 3. Size / Power (🏋️ vs ⚡)
     if (lower.includes(':70b') || lower.includes(':large') || lower.includes('671b') || lower.includes('675b') || lower.includes('480b') || lower.includes('235b') || lower.includes('120b')) {
         caps.push({ type: 'size', icon: '🏋️', label: 'High Power' });
     } else if (lower.includes(':7b') || lower.includes(':8b') || lower.includes('24b') || lower.includes('3b') || lower.includes('4b')) {
@@ -1388,14 +1371,8 @@ function getModelCapabilities(name) {
 function updateHeaderControlsUI() {
     const caps = getModelCapabilities(state.currentModel);
     const hasThinking = caps.some(c => c.type === 'thinking');
-    const hasSearch = caps.some(c => c.type === 'search');
 
     // Show only the controls the selected model can actually use.
-    if (dom.searchBtn) {
-        dom.searchBtn.style.display = hasSearch ? 'flex' : 'none';
-        dom.searchBtn.style.backgroundColor = state.enableSearch ? 'var(--accent)' : 'var(--bg-tertiary)';
-        dom.searchBtn.style.color = state.enableSearch ? 'white' : 'var(--text-secondary)';
-    }
     if (dom.thinkingBtn) {
         dom.thinkingBtn.style.display = hasThinking ? 'flex' : 'none';
         dom.thinkingBtn.style.backgroundColor = state.showThinking ? 'var(--accent)' : 'var(--bg-tertiary)';

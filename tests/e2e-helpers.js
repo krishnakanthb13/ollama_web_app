@@ -33,7 +33,8 @@ async function openApp(browser, port, storage = {}, viewport = { width: 1280, he
 
     await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
-        () => document.querySelectorAll('#model-list .model-option').length > 0,
+        () => document.querySelectorAll('#model-list .model-option').length > 0
+            && document.getElementById('sidebar').style.width !== '',
         null,
         { timeout: 10000 }
     );

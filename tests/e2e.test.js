@@ -461,6 +461,33 @@ test('quality label follows the preset and think is gated by model support', asy
     }
 });
 
+test('the non-functional web-search control and payload are removed', async () => {
+    server.state.models = ['gpt-oss:20b'];
+
+    const { context, page } = await openApp(browser, port, { enableSearch: 'true' });
+
+    try {
+        assert.equal(await page.$('#search-btn'), null, 'the search toggle should not exist');
+        assert.equal(
+            await page.evaluate(() => document.getElementById('header-controls').textContent.includes('🌐')),
+            false
+        );
+
+        await sendMessage(page, 'no web search');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('from the mock.'),
+            null,
+            { timeout: 10000 }
+        );
+
+        const request = server.state.requests.at(-1);
+        assert.equal('options' in request, false);
+        assert.equal(JSON.stringify(request).includes('web_search'), false);
+    } finally {
+        await context.close();
+    }
+});
+
 test('corrupted persisted settings cannot break app startup', async () => {
     server.state.models = ['good-model:latest-cloud'];
     const { context, page, pageErrors } = await openApp(browser, port, {

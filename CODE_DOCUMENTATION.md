@@ -32,7 +32,7 @@ The Ollama Web App follows a **client-side only** architecture (Single Page Appl
 | **State** | `state` object | Holds global app state (`currentChatId`, `models`, `settings`). |
 | | `validateCurrentModel()` | Falls back to the first available model when the stored selection no longer exists. |
 | | `updateHeaderControlsUI()` | Shows only the controls the selected model supports and keeps the quality label in sync. |
-| **Capabilities** | `getModelCapabilities()` | Detects thinking, search, tools and size support from the model name. |
+| **Capabilities** | `getModelCapabilities()` | Detects thinking, tools and size support from the model name. |
 | **Initialization** | `init()` | Bootstraps the app: binds DOM, loads models, restores settings. |
 | **Chat Logic** | `sendMessage()` | Handles user input, updates UI, calls Ollama API, streams the response, and persists a partial answer when a request is stopped or interrupted. |
 | | `stopGeneration()` | Cancels the active request; the partial answer is saved with an `interrupted` status. |
