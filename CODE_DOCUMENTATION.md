@@ -36,6 +36,7 @@ The Ollama Web App follows a **client-side only** architecture (Single Page Appl
 | **Rendering** | `renderChatList()` | Renders the sidebar list of conversation history. |
 | | `appendMessageToUI()` | Adds a new message bubble to the chat window (supports Markdown). |
 | **Utilities** | `escapeHtml()` | Escapes all untrusted values before HTML interpolation. |
+| | `createNdjsonParser()` | Buffers split stream lines, flushes the final line, and reports `done`/`error` payloads. |
 | **Settings** | `openSettings()` | Toggles the settings panel. |
 | | `toggleCloudList()` | Expands/collapses the cloud model configuration section. |
 

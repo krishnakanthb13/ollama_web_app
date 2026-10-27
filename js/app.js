@@ -3,7 +3,8 @@ const {
     escapeHtml,
     scrollElementToBottom,
     buildChatTitle,
-    createRequestRegistry
+    createRequestRegistry,
+    createNdjsonParser
 } = window.AppUtils;
 const requestRegistry = createRequestRegistry();
 const REQUEST_IDLE_TIMEOUT_MS = 60000;
@@ -1019,45 +1020,53 @@ async function sendMessage() {
 
         reader = response.body.getReader();
         const decoder = new TextDecoder();
-        let buffer = '';
+        const parser = createNdjsonParser();
+
+        const applyStreamEvent = (event) => {
+            if (event.error) {
+                if (event.fatal) throw new Error(event.error);
+                console.warn(event.error);
+                return;
+            }
+
+            if (event.thinking) {
+                if (!thinkingBlock) {
+                    thinkingBlock = document.createElement('div');
+                    thinkingBlock.className = `thinking-block ${state.showThinking ? 'active' : ''}`;
+                    msgDiv.insertBefore(thinkingBlock, contentBlock);
+                }
+                assistantMsg.thinking += event.thinking;
+                thinkingBlock.textContent = assistantMsg.thinking;
+            }
+
+            if (event.content) {
+                assistantMsg.content += event.content;
+                try {
+                    contentBlock.innerHTML = DOMPurify.sanitize(marked.parse(assistantMsg.content));
+                } catch (e) {
+                    contentBlock.textContent = assistantMsg.content;
+                }
+            }
+        };
 
         while (true) {
             const { done, value } = await readWithIdleTimeout(reader, REQUEST_IDLE_TIMEOUT_MS);
-            if (done) break;
 
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
+            if (done) {
+                // A final line may arrive without a trailing newline.
+                for (const event of parser.flush()) applyStreamEvent(event);
+                break;
+            }
 
-            for (const line of lines) {
-                if (!line.trim()) continue;
-                try {
-                    const json = JSON.parse(line);
-                    if (json.message?.thinking) {
-                        if (!thinkingBlock) {
-                            thinkingBlock = document.createElement('div');
-                            thinkingBlock.className = `thinking-block ${state.showThinking ? 'active' : ''}`;
-                            msgDiv.insertBefore(thinkingBlock, contentBlock);
-                        }
-                        assistantMsg.thinking += json.message.thinking;
-                        thinkingBlock.textContent = assistantMsg.thinking;
-                    }
-                    if (json.message?.content) {
-                        assistantMsg.content += json.message.content;
-                        try {
-                            contentBlock.innerHTML = DOMPurify.sanitize(marked.parse(assistantMsg.content));
-                        } catch (e) {
-                            contentBlock.textContent = assistantMsg.content;
-                        }
-                    }
-                } catch (e) {
-                    console.error('Failed to parse stream chunk', e);
-                }
+            for (const event of parser.push(decoder.decode(value, { stream: true }))) {
+                applyStreamEvent(event);
             }
             scrollToBottom();
+
+            if (parser.sawDone) break;
         }
 
-        completed = !request.cancelled;
+        completed = !request.cancelled && parser.sawDone;
         if (completed && contentBlock) {
             try {
                 contentBlock.innerHTML = DOMPurify.sanitize(marked.parse(assistantMsg.content));
@@ -1078,9 +1087,11 @@ async function sendMessage() {
             }
         }
     } finally {
+        if (reader) {
+            try { reader.cancel().catch(() => {}); } catch (e) { /* stream already closed */ }
+        }
         if (!completed) {
             try { request.controller.abort(); } catch (e) { /* already aborted */ }
-            try { reader?.cancel?.().catch(() => {}); } catch (e) { /* stream already closed */ }
         }
 
         const hasContent = assistantMsg.content.length > 0 || assistantMsg.thinking.length > 0;

@@ -267,3 +267,103 @@ test('switching chats mid-stream saves the partial answer without leaking it', a
         await context.close();
     }
 });
+
+test('an unterminated final NDJSON line is still rendered and saved', async () => {
+    server.state.models = ['good-model:latest-cloud'];
+    server.state.chatHandler = (req, res, body) => {
+        const stream = startNdjson(res, body.model);
+        stream.chunk({ role: 'assistant', content: 'Tail ' });
+        // Final line deliberately has no trailing newline.
+        res.write(JSON.stringify({
+            model: body.model,
+            message: { role: 'assistant', content: 'complete' },
+            done: true
+        }));
+        res.end();
+    };
+
+    const { context, page } = await openApp(browser, port);
+
+    try {
+        await sendMessage(page, 'ndjson tail');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('Tail complete'),
+            null,
+            { timeout: 10000 }
+        );
+        await page.waitForFunction(
+            () => getComputedStyle(document.getElementById('stop-btn')).display === 'none'
+        );
+
+        const snapshot = await readDbSnapshot(page);
+        const assistant = snapshot.messages.find((message) => message.role === 'assistant');
+        assert.equal(assistant.content, 'Tail complete');
+        assert.equal(assistant.status, 'complete');
+    } finally {
+        await context.close();
+    }
+});
+
+test('an NDJSON line split across network writes is reassembled', async () => {
+    server.state.models = ['good-model:latest-cloud'];
+    server.state.chatHandler = async (req, res, body) => {
+        const stream = startNdjson(res, body.model);
+        res.write('{"model":"' + body.model + '","message":{"role":"assistant","content":"Spl');
+        await sleep(250);
+        res.write('it answer"},"done":false}\n');
+        await sleep(100);
+        stream.end();
+    };
+
+    const { context, page } = await openApp(browser, port);
+
+    try {
+        await sendMessage(page, 'split line');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('Split answer'),
+            null,
+            { timeout: 10000 }
+        );
+        await page.waitForFunction(
+            () => getComputedStyle(document.getElementById('stop-btn')).display === 'none'
+        );
+
+        const snapshot = await readDbSnapshot(page);
+        const assistant = snapshot.messages.find((message) => message.role === 'assistant');
+        assert.equal(assistant.content, 'Split answer');
+        assert.equal(assistant.status, 'complete');
+    } finally {
+        await context.close();
+    }
+});
+
+test('an error payload stops the stream, shows the error and keeps the partial answer', async () => {
+    server.state.models = ['good-model:latest-cloud'];
+    server.state.chatHandler = (req, res, body) => {
+        const stream = startNdjson(res, body.model);
+        stream.chunk({ role: 'assistant', content: 'Partial answer' });
+        res.write(JSON.stringify({ error: 'model overloaded' }) + '\n');
+        res.end();
+    };
+
+    const { context, page } = await openApp(browser, port);
+
+    try {
+        await sendMessage(page, 'stream error');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('Error: model overloaded'),
+            null,
+            { timeout: 10000 }
+        );
+        await page.waitForSelector('.msg-status');
+
+        assert.equal((await page.textContent('.msg-status')).trim(), 'Interrupted');
+
+        const snapshot = await readDbSnapshot(page);
+        const assistant = snapshot.messages.find((message) => message.role === 'assistant');
+        assert.equal(assistant.content, 'Partial answer');
+        assert.equal(assistant.status, 'interrupted');
+    } finally {
+        await context.close();
+    }
+});

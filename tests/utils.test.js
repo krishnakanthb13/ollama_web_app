@@ -7,7 +7,8 @@ const {
     escapeHtml,
     scrollElementToBottom,
     buildChatTitle,
-    createRequestRegistry
+    createRequestRegistry,
+    createNdjsonParser
 } = require('../js/utils.js');
 
 test('escapeHtml escapes HTML metacharacters', () => {
@@ -93,4 +94,51 @@ test('request registry aborts on cancel and keeps the first stop reason', async 
     registry.finish(request);
     await request.done;
     assert.equal(resolved, true);
+});
+
+test('NDJSON parser buffers lines split across chunks', () => {
+    const parser = createNdjsonParser();
+
+    assert.deepEqual(parser.push('{"message":{"content":"Hel'), []);
+    const events = parser.push('lo"}}\n{"message":{"content":" world"},"done":false}\n');
+
+    assert.deepEqual(events.map((event) => event.content), ['Hello', ' world']);
+    assert.equal(parser.sawDone, false);
+});
+
+test('NDJSON parser flushes a final line without a trailing newline', () => {
+    const parser = createNdjsonParser();
+
+    assert.deepEqual(parser.push('{"message":{"content":"tail"},"done":true}'), []);
+    const events = parser.flush();
+
+    assert.deepEqual(events.map((event) => event.content), ['tail']);
+    assert.equal(events[0].done, true);
+    assert.equal(parser.sawDone, true);
+    assert.deepEqual(parser.flush(), []);
+});
+
+test('NDJSON parser reports server errors as fatal events', () => {
+    const parser = createNdjsonParser();
+
+    const events = parser.push(
+        '{"message":{"content":"partial"},"done":false}\n{"error":"model overloaded"}\n'
+    );
+
+    assert.equal(events[0].content, 'partial');
+    assert.equal(events[1].error, 'model overloaded');
+    assert.equal(events[1].fatal, true);
+    assert.equal(parser.sawDone, true);
+});
+
+test('NDJSON parser skips blank lines and treats malformed lines as non-fatal', () => {
+    const parser = createNdjsonParser();
+
+    const events = parser.push('\n  \nnot-json\n{"message":{"thinking":"hmm"}}\r\n');
+
+    assert.equal(events.length, 2);
+    assert.equal(events[0].fatal, false);
+    assert.match(events[0].error, /Malformed JSON/);
+    assert.equal(events[1].thinking, 'hmm');
+    assert.equal(parser.sawDone, false);
 });

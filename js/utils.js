@@ -114,10 +114,77 @@
         };
     }
 
+    /**
+     * Stateful parser for Ollama's newline-delimited JSON stream. Buffers
+     * partial lines across chunks and exposes the `done` flag so the caller can
+     * distinguish a completed answer from a truncated stream.
+     *
+     * Events have the shape `{ content, thinking, done }` for data lines and
+     * `{ error, fatal }` for `{ "error": ... }` payloads (fatal) or malformed
+     * lines (non-fatal).
+     */
+    function createNdjsonParser() {
+        let buffer = '';
+        let sawDone = false;
+
+        function parseLine(line, events) {
+            const trimmed = line.trim();
+            if (!trimmed) return;
+
+            let json;
+            try {
+                json = JSON.parse(trimmed);
+            } catch (error) {
+                events.push({
+                    error: `Malformed JSON from server: ${trimmed.slice(0, 120)}`,
+                    fatal: false
+                });
+                return;
+            }
+
+            if (json && json.error) {
+                sawDone = true;
+                events.push({ error: String(json.error), fatal: true });
+                return;
+            }
+
+            const event = {
+                content: typeof json.message?.content === 'string' ? json.message.content : '',
+                thinking: typeof json.message?.thinking === 'string' ? json.message.thinking : '',
+                done: json.done === true
+            };
+            if (event.done) sawDone = true;
+            events.push(event);
+        }
+
+        return {
+            push(chunk) {
+                buffer += String(chunk ?? '');
+                const events = [];
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+                for (const line of lines) parseLine(line, events);
+                return events;
+            },
+
+            flush() {
+                const events = [];
+                if (buffer.trim()) parseLine(buffer, events);
+                buffer = '';
+                return events;
+            },
+
+            get sawDone() {
+                return sawDone;
+            }
+        };
+    }
+
     return {
         escapeHtml,
         scrollElementToBottom,
         buildChatTitle,
-        createRequestRegistry
+        createRequestRegistry,
+        createNdjsonParser
     };
 });
