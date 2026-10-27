@@ -9,7 +9,10 @@ const {
     parseStoredArray,
     normalizeChoice,
     normalizeSidebarWidth,
-    uniqueStrings
+    uniqueStrings,
+    normalizeEndpointUrl,
+    canSendApiKey,
+    describeFetchFailure
 } = window.AppUtils;
 const requestRegistry = createRequestRegistry();
 const REQUEST_IDLE_TIMEOUT_MS = 60000;
@@ -202,8 +205,8 @@ const state = {
     isSending: false,
 
     // Configuration
-    localUrl: safeStorageGet('localUrl') || DEFAULT_LOCAL_URL,
-    cloudUrl: safeStorageGet('cloudUrl') || DEFAULT_CLOUD_URL,
+    localUrl: normalizeEndpointUrl(safeStorageGet('localUrl'), DEFAULT_LOCAL_URL),
+    cloudUrl: normalizeEndpointUrl(safeStorageGet('cloudUrl'), DEFAULT_CLOUD_URL),
     cloudApiKey: safeStorageGet('cloudApiKey', ''),
 
     // Models
@@ -938,6 +941,7 @@ async function sendMessage() {
     let thinkingBlock = null;
     let metaRow = null;
     let completed = false;
+    let hadError = false;
 
     let assistantMsg = {
         role: 'assistant',
@@ -989,7 +993,12 @@ async function sendMessage() {
             url = `${state.localUrl}/api/chat`;
         } else {
             url = `${state.cloudUrl}/chat`;
-            if (state.cloudApiKey) headers['Authorization'] = `Bearer ${state.cloudApiKey}`;
+            if (state.cloudApiKey) {
+                if (!canSendApiKey(url)) {
+                    throw new Error('Refusing to send the API key over an insecure connection. Use an https:// cloud URL or a loopback address.');
+                }
+                headers['Authorization'] = `Bearer ${state.cloudApiKey}`;
+            }
         }
 
         const supportsThinking = getModelCapabilities(model).some((cap) => cap.type === 'thinking');
@@ -1067,14 +1076,10 @@ async function sendMessage() {
         }
     } catch (e) {
         if (!request.cancelled && e.name !== 'AbortError') {
+            hadError = true;
             console.error('Chat request failed', e);
             if (contentBlock) {
-                contentBlock.appendChild(showChatError(`Error: ${e.message}`));
-                if (e.message.includes('Failed to fetch') && url.includes('localhost')) {
-                    const hint = document.createElement('small');
-                    hint.innerHTML = '<br>Hint: Ensure Ollama is running with <code>OLLAMA_ORIGINS="*"</code> environment variable.';
-                    contentBlock.appendChild(hint);
-                }
+                contentBlock.appendChild(showChatError(`Error: ${describeFetchFailure(url, e)}`));
             }
         }
     } finally {
@@ -1112,7 +1117,7 @@ async function sendMessage() {
             if (isRequestVisible(request)) {
                 state.messages.push(assistantMsg);
             }
-        } else if (msgDiv?.parentNode) {
+        } else if (msgDiv?.parentNode && !hadError) {
             // A stopped request with no tokens should not leave an empty bubble.
             msgDiv.remove();
         }
@@ -1139,9 +1144,25 @@ function closeSettings() {
 }
 
 function saveSettings() {
-    state.localUrl = dom.inputLocalUrl.value.replace(/\/$/, '');
-    state.cloudUrl = dom.inputCloudUrl.value.replace(/\/$/, '');
+    const localUrl = normalizeEndpointUrl(dom.inputLocalUrl.value);
+    const cloudUrl = normalizeEndpointUrl(dom.inputCloudUrl.value);
+
+    if (!localUrl || !cloudUrl) {
+        alert('Please enter valid http:// or https:// URLs for the local and cloud endpoints.');
+        return;
+    }
+
+    if (state.cloudApiKey && !canSendApiKey(cloudUrl)) {
+        alert('The API key is only sent over HTTPS or to a loopback address. Use an https:// cloud URL.');
+        return;
+    }
+
+    state.localUrl = localUrl;
+    state.cloudUrl = cloudUrl;
     state.cloudApiKey = dom.inputCloudKey.value;
+
+    dom.inputLocalUrl.value = localUrl;
+    dom.inputCloudUrl.value = cloudUrl;
 
     localStorage.setItem('localUrl', state.localUrl);
     localStorage.setItem('cloudUrl', state.cloudUrl);

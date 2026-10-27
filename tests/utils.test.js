@@ -13,7 +13,11 @@ const {
     parseStoredArray,
     normalizeChoice,
     normalizeSidebarWidth,
-    uniqueStrings
+    uniqueStrings,
+    normalizeEndpointUrl,
+    isLoopbackEndpoint,
+    canSendApiKey,
+    describeFetchFailure
 } = require('../js/utils.js');
 
 test('escapeHtml escapes HTML metacharacters', () => {
@@ -212,4 +216,58 @@ test('safeStorageGet reads values and survives unavailable storage', () => {
     } finally {
         globalThis.localStorage = original;
     }
+});
+
+test('normalizeEndpointUrl accepts HTTP(S) URLs and strips trailing slashes', () => {
+    assert.equal(normalizeEndpointUrl('  http://localhost:11434/  '), 'http://localhost:11434');
+    assert.equal(normalizeEndpointUrl('https://ollama.com/api///'), 'https://ollama.com/api');
+    assert.equal(normalizeEndpointUrl('https://ollama.com/api?x=1#hash'), 'https://ollama.com/api');
+});
+
+test('normalizeEndpointUrl rejects unsupported or malformed URLs', () => {
+    assert.equal(normalizeEndpointUrl('ftp://example.com'), '');
+    assert.equal(normalizeEndpointUrl('not a url'), '');
+    assert.equal(normalizeEndpointUrl(''), '');
+    assert.equal(normalizeEndpointUrl(null), '');
+    assert.equal(normalizeEndpointUrl('nonsense', 'http://fallback.test'), 'http://fallback.test');
+});
+
+test('isLoopbackEndpoint recognises loopback hosts only', () => {
+    assert.equal(isLoopbackEndpoint('http://localhost:11434'), true);
+    assert.equal(isLoopbackEndpoint('http://127.0.0.1:11434/api'), true);
+    assert.equal(isLoopbackEndpoint('http://[::1]:11434'), true);
+    assert.equal(isLoopbackEndpoint('https://ollama.com/api'), false);
+    assert.equal(isLoopbackEndpoint('http://192.168.1.10:11434'), false);
+    assert.equal(isLoopbackEndpoint('not a url'), false);
+});
+
+test('canSendApiKey only allows HTTPS or loopback endpoints', () => {
+    assert.equal(canSendApiKey('https://ollama.com/api/chat'), true);
+    assert.equal(canSendApiKey('http://localhost:11434/api/chat'), true);
+    assert.equal(canSendApiKey('http://127.0.0.1:11434/api/chat'), true);
+    assert.equal(canSendApiKey('http://example.invalid/api/chat'), false);
+    assert.equal(canSendApiKey('ftp://example.com'), false);
+    assert.equal(canSendApiKey('not a url'), false);
+});
+
+test('describeFetchFailure gives local Ollama guidance for network failures', () => {
+    const message = describeFetchFailure('http://localhost:11434/api/chat', new TypeError('Failed to fetch'));
+
+    assert.match(message, /Could not reach Ollama at http:\/\/localhost:11434/);
+    assert.match(message, /OLLAMA_ORIGINS/);
+});
+
+test('describeFetchFailure explains cloud CORS for remote network failures', () => {
+    const message = describeFetchFailure('https://ollama.com/api/chat', new TypeError('Failed to fetch'));
+
+    assert.match(message, /https:\/\/ollama\.com/);
+    assert.match(message, /CORS/);
+    assert.match(message, /same-origin proxy/);
+});
+
+test('describeFetchFailure leaves non-network errors unchanged', () => {
+    assert.equal(
+        describeFetchFailure('https://ollama.com/api/chat', new Error('API Error: 500')),
+        'API Error: 500'
+    );
 });

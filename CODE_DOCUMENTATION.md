@@ -22,6 +22,18 @@ The Ollama Web App follows a **client-side only** architecture (Single Page Appl
 3.  **Data Layer**: IndexedDB (`OllamaWebApp`) for persistent storage of chats and messages.
 4.  **Network Layer**: `fetch` API to communicate with Ollama (`/api/tags`, `/api/chat`).
 
+### Cloud endpoints and CORS
+
+The app runs entirely in the browser, so every API call is subject to CORS.
+Ollama's public endpoint (`https://ollama.com/api`) does not return
+`Access-Control-Allow-Origin`, which means direct browser requests are blocked.
+Use a same-origin proxy or a local Ollama daemon with cloud models enabled; the
+UI reports this explicitly when a remote request fails.
+
+Endpoint URLs are validated as `http(s)` and trailing slashes are removed. API
+keys are attached only to cloud requests, and only over HTTPS or a loopback
+address. Insecure remote endpoints are refused rather than leaking the key.
+
 ## Core Modules & Functions (`js/app.js`)
 
 | Module / Class | Function | Description |
@@ -42,6 +54,8 @@ The Ollama Web App follows a **client-side only** architecture (Single Page Appl
 | | `createNdjsonParser()` | Buffers split stream lines, flushes the final line, and reports `done`/`error` payloads. |
 | | `parseStoredArray()` / `normalizeChoice()` | Validate persisted arrays and enum-like settings before they reach app state. |
 | | `safeStorageGet()` | Reads localStorage without throwing when storage is blocked. |
+| | `normalizeEndpointUrl()` / `canSendApiKey()` | Validates endpoint URLs and blocks API keys on insecure remote connections. |
+| | `describeFetchFailure()` | Adds local Ollama or cloud CORS guidance to network failures. |
 | **Settings** | `openSettings()` | Toggles the settings panel. |
 | | `toggleCloudList()` | Expands/collapses the cloud model configuration section. |
 

@@ -488,6 +488,99 @@ test('the non-functional web-search control and payload are removed', async () =
     }
 });
 
+test('remote network failures explain the cloud CORS limitation', async () => {
+    server.state.models = ['local-model:latest'];
+
+    const { context, page } = await openApp(browser, port, {
+        cloudUrl: 'http://example.invalid/api',
+        cloudModels: JSON.stringify(['remote-model:cloud'])
+    });
+
+    try {
+        await page.click('#model-selector-btn');
+        await page.click('#model-list .model-option:has-text("remote-model:cloud")');
+        await page.waitForFunction(() => state.currentModel === 'remote-model:cloud');
+
+        await sendMessage(page, 'cloud hello');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('CORS'),
+            null,
+            { timeout: 15000 }
+        );
+
+        const text = await page.textContent('#messages-area');
+        assert.match(text, /ollama\.com does not send CORS headers/);
+        assert.match(text, /same-origin proxy/);
+        assert.equal(server.state.requests.length, 0, 'the failing cloud request should not reach the mock server');
+    } finally {
+        await context.close();
+    }
+});
+
+test('API keys are refused on insecure remote endpoints', async () => {
+    server.state.models = ['local-model:latest'];
+
+    const { context, page } = await openApp(browser, port, {
+        cloudUrl: 'http://example.invalid/api',
+        cloudApiKey: 'sk-test-secret',
+        cloudModels: JSON.stringify(['remote-model:cloud'])
+    });
+
+    try {
+        await page.click('#model-selector-btn');
+        await page.click('#model-list .model-option:has-text("remote-model:cloud")');
+
+        await sendMessage(page, 'send a secret');
+        await page.waitForFunction(
+            () => document.getElementById('messages-area').textContent.includes('Refusing to send the API key'),
+            null,
+            { timeout: 15000 }
+        );
+
+        assert.equal(server.state.requests.length, 0);
+        assert.equal(
+            await page.$$eval('#messages-area .chat-error', (elements) => elements.length),
+            1,
+            'the error bubble should remain visible even without streamed tokens'
+        );
+        assert.equal(await page.evaluate(() => state.isSending), false);
+        assert.equal(
+            (await page.textContent('#messages-area')).includes('sk-test-secret'),
+            false,
+            'the API key must never be rendered'
+        );
+    } finally {
+        await context.close();
+    }
+});
+
+test('settings reject malformed endpoints and keep the dialog open', async () => {
+    server.state.models = ['local-model:latest'];
+
+    const { context, page } = await openApp(browser, port);
+    const dialogs = [];
+    page.on('dialog', async (dialog) => {
+        dialogs.push(dialog.message());
+        await dialog.accept();
+    });
+
+    try {
+        await page.click('#settings-btn-sidebar');
+        await page.waitForSelector('#settings-panel.active');
+        await page.fill('#setting-local-url', 'javascript:alert(1)');
+        await page.click('#save-settings-btn');
+
+        await page.waitForFunction(() => document.getElementById('settings-panel').classList.contains('active'));
+        assert.ok(
+            dialogs.some((message) => message.includes('valid http:// or https:// URLs')),
+            'an invalid endpoint should be rejected'
+        );
+        assert.match(await page.evaluate(() => state.localUrl), /^http:\/\/127\.0\.0\.1:/);
+    } finally {
+        await context.close();
+    }
+});
+
 test('corrupted persisted settings cannot break app startup', async () => {
     server.state.models = ['good-model:latest-cloud'];
     const { context, page, pageErrors } = await openApp(browser, port, {

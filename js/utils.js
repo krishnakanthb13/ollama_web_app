@@ -276,6 +276,95 @@
         return result;
     }
 
+    /**
+     * Trim and validate an HTTP(S) endpoint, dropping trailing slashes.
+     * Returns `fallback` when the value is not a usable URL.
+     *
+     * @param {unknown} value
+     * @param {string} [fallback]
+     * @returns {string}
+     */
+    function normalizeEndpointUrl(value, fallback = '') {
+        if (typeof value !== 'string') return fallback;
+
+        const trimmed = value.trim();
+        if (!trimmed) return fallback;
+
+        let url;
+        try {
+            url = new URL(trimmed);
+        } catch (error) {
+            return fallback;
+        }
+
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return fallback;
+
+        const path = url.pathname.replace(/\/+$/, '');
+        return `${url.origin}${path}`;
+    }
+
+    /**
+     * Whether an endpoint points at the local machine.
+     *
+     * @param {unknown} value
+     * @returns {boolean}
+     */
+    function isLoopbackEndpoint(value) {
+        try {
+            const hostname = new URL(String(value)).hostname.toLowerCase();
+            return hostname === 'localhost'
+                || hostname === '127.0.0.1'
+                || hostname === '::1'
+                || hostname === '[::1]';
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /**
+     * API keys are only safe to send over HTTPS or to a loopback address.
+     *
+     * @param {unknown} endpoint
+     * @returns {boolean}
+     */
+    function canSendApiKey(endpoint) {
+        try {
+            const protocol = new URL(String(endpoint)).protocol;
+            return protocol === 'https:' || isLoopbackEndpoint(endpoint);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /**
+     * Turn a network failure into an actionable message. Non-network errors
+     * (HTTP status failures, parser errors) are returned unchanged.
+     *
+     * @param {unknown} endpoint
+     * @param {unknown} error
+     * @returns {string}
+     */
+    function describeFetchFailure(endpoint, error) {
+        const message = error?.message ? String(error.message) : 'Request failed';
+        const isNetworkFailure = error instanceof TypeError
+            || /failed to fetch|load failed|networkerror|network error/i.test(message);
+
+        if (!isNetworkFailure) return message;
+
+        let origin = String(endpoint ?? '');
+        try {
+            origin = new URL(String(endpoint)).origin;
+        } catch (urlError) {
+            // Keep the raw endpoint when it cannot be parsed.
+        }
+
+        if (isLoopbackEndpoint(endpoint)) {
+            return `${message}. Could not reach Ollama at ${origin}. Make sure it is running and allow this origin with OLLAMA_ORIGINS="*".`;
+        }
+
+        return `${message}. Could not reach ${origin}. Browser requests to a remote Ollama endpoint need CORS support; ollama.com does not send CORS headers. Use a same-origin proxy or a local Ollama daemon with cloud models enabled.`;
+    }
+
     return {
         escapeHtml,
         scrollElementToBottom,
@@ -286,6 +375,10 @@
         parseStoredArray,
         normalizeChoice,
         normalizeSidebarWidth,
-        uniqueStrings
+        uniqueStrings,
+        normalizeEndpointUrl,
+        isLoopbackEndpoint,
+        canSendApiKey,
+        describeFetchFailure
     };
 });

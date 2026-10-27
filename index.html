@@ -208,6 +208,9 @@
                         <label>Cloud / Remote API URL</label>
                         <input type="text" id="setting-cloud-url" class="settings-input"
                             placeholder="https://ollama.com/api">
+                        <small style="color: var(--text-secondary); font-size: 0.75rem;">Calls go directly from the
+                            browser. ollama.com does not send CORS headers, so use a same-origin proxy or a local
+                            Ollama daemon with cloud models enabled.</small>
                     </div>
 
                     <div class="settings-group">
@@ -222,6 +225,8 @@
                                 </svg>
                             </button>
                         </div>
+                        <small style="color: var(--text-secondary); font-size: 0.75rem;">Sent only to the cloud
+                            endpoint, and only over HTTPS or to a loopback address.</small>
                     </div>
 
                     <div class="settings-group">
